@@ -957,7 +957,8 @@ export class GameEngine {
 
   private gainXp(amount: number) {
     this.hero.xp += amount
-    if (this.hero.xp >= this.hero.xpToNext && this.status === 'playing') {
+    let guard = 0
+    while (this.hero.xp >= this.hero.xpToNext && this.status === 'playing' && guard++ < 20) {
       this.doLevelUp()
     }
   }
@@ -968,65 +969,56 @@ export class GameEngine {
     h.level++
     h.xpToNext = Math.round(6 + h.level * 5 + h.level * h.level * 0.35)
     h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.1)
-    this.status = 'levelup'
-    this.buildChoices()
+    // auto-pick an upgrade so the action never stops — no pause menu
+    const pick = this.autoPickUpgrade()
+    pick.apply()
+    const label = pick.kind === 'new' ? `${pick.choice.icon} NEW: ${pick.choice.name}!`
+      : pick.kind === 'up' ? `${pick.choice.icon} ${pick.choice.name} ${pick.choice.tag ?? ''}`
+        : `${pick.choice.icon} ${pick.choice.name}`
+    this.floatText(h.x, h.y - 48, `⬆ LV ${h.level}`, '#e599f7', 26)
+    this.floatText(h.x, h.y - 26, label, pick.kind === 'stat' ? '#fff' : '#ffd43b', 18)
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 70, life: 0.4, color: 'rgba(204,93,232,0.6)' })
     this.emit()
   }
 
-  /** Build the 3-option draft: new weapons, weapon upgrades, and stat cards. */
-  private buildChoices() {
-    type Opt = { choice: DraftChoice; apply: () => void; weight: number }
-    const opts: Opt[] = []
+  private autoPickUpgrade() {
+    type Opt = { choice: DraftChoice; apply: () => void; kind: 'new' | 'up' | 'stat' }
+    const news: Opt[] = []
+    const ups: Opt[] = []
+    const stats: Opt[] = []
 
-    // weapon upgrades for weapons you already own
     for (const w of this.weapons) {
       const m = WEAPONS[w.id]
       if (w.level >= m.max) continue
-      opts.push({
-        weight: m.rarity === 'epic' ? 3 : m.rarity === 'rare' ? 4 : 5,
-        choice: { id: `wup-${w.id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: `Lv ${w.level} → ${w.level + 1}` },
-        apply: () => { w.level++ },
-      })
+      ups.push({ kind: 'up', apply: () => { w.level++ }, choice: { id: `wup-${w.id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: `Lv ${w.level + 1}` } })
     }
-    // brand-new weapons (if you have a free slot)
     if (this.weapons.length < MAX_WEAPONS) {
       for (const id of WEAPON_IDS) {
         if (this.weapons.some((w) => w.id === id)) continue
         const m = WEAPONS[id]
-        opts.push({
-          weight: m.rarity === 'epic' ? 2.5 : m.rarity === 'rare' ? 3.5 : 4.5,
-          choice: { id: `wnew-${id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: '★ NEW WEAPON' },
-          apply: () => { this.weapons.push({ id, level: 1, timer: 0 }) },
-        })
+        news.push({ kind: 'new', apply: () => { this.weapons.push({ id, level: 1, timer: 0 }) }, choice: { id: `wnew-${id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity } })
       }
     }
-    // stat / ability cards
     for (const c of CARD_POOL) {
-      opts.push({
-        weight: c.rarity === 'common' ? 4 : c.rarity === 'rare' ? 2.2 : 1.1,
-        choice: { id: c.id, name: c.name, icon: c.icon, desc: c.desc, rarity: c.rarity },
+      stats.push({
+        kind: 'stat',
         apply: () => {
           const before = this.stats.maxHp
           c.apply(this.stats)
           this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + Math.max(0, this.stats.maxHp - before))
         },
+        choice: { id: c.id, name: c.name, icon: c.icon, desc: c.desc, rarity: c.rarity },
       })
     }
 
-    // weighted pick of 3 distinct options
-    const chosen: Opt[] = []
-    const pool = [...opts]
-    for (let i = 0; i < 3 && pool.length; i++) {
-      const total = pool.reduce((a, o) => a + o.weight, 0)
-      let r = Math.random() * total
-      let idx = 0
-      for (let j = 0; j < pool.length; j++) { r -= pool[j].weight; if (r <= 0) { idx = j; break } }
-      chosen.push(pool[idx])
-      pool.splice(idx, 1)
-    }
-    this.choices = chosen.map((o) => o.choice)
-    this.choiceActions = {}
-    for (const o of chosen) this.choiceActions[o.choice.id] = o.apply
+    const rand = (arr: Opt[]) => arr[Math.floor(Math.random() * arr.length)]
+    const r = Math.random()
+    // early: fill the arsenal; mid: level weapons; always some stat variety
+    if (news.length && this.weapons.length < 4 && r < 0.65) return rand(news)
+    if (ups.length && r < 0.7) return rand(ups)
+    if (news.length && r < 0.85) return rand(news)
+    if (stats.length) return rand(stats)
+    return rand(ups.length ? ups : news)
   }
 
   // ---------- main loop ----------
