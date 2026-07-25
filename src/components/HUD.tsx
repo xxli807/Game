@@ -1,6 +1,6 @@
 import { HudState } from '../game/types'
 
-export default function HUD({ state }: { state: HudState }) {
+export default function HUD({ state, onAbility }: { state: HudState; onAbility: (key: string) => void }) {
   const hpPct = (state.hp / state.maxHp) * 100
   const mpPct = (state.mana / state.maxMana) * 100
   const xpPct = (state.xp / state.xpToNext) * 100
@@ -41,13 +41,17 @@ export default function HUD({ state }: { state: HudState }) {
           const ready = a.cdLeft <= 0.001
           const pct = a.cdMax > 0 ? (a.cdLeft / a.cdMax) * 100 : 0
           return (
-            <div key={a.key} className={`ability ${ready ? 'ready' : ''}`}>
+            <button
+              key={a.key}
+              className={`ability ${ready ? 'ready' : ''}`}
+              onPointerDown={(e) => { e.preventDefault(); onAbility(a.key) }}
+            >
               <div className="ability-icon">{a.icon}</div>
               {!ready && <div className="ability-cd" style={{ height: `${pct}%` }} />}
               {!ready && <div className="ability-cd-text">{a.cdLeft.toFixed(1)}</div>}
               <div className="ability-key">{a.key}</div>
               <div className="ability-mana">{a.manaCost}</div>
-            </div>
+            </button>
           )
         })}
       </div>

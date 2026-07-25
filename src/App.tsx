@@ -99,7 +99,7 @@ function GameScreen({
     <div className="game-frame">
       <canvas ref={canvasRef} width={WIDTH} height={HEIGHT} className="game-canvas" />
 
-      {hud && <HUD state={hud} />}
+      {hud && <HUD state={hud} onAbility={(key) => engineRef.current?.castAbility(key)} />}
 
       {hud?.status === 'levelup' && (
         <LevelUpModal cards={hud.cards} onPick={(id) => engineRef.current?.chooseCard(id)} />

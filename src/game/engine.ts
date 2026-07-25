@@ -261,6 +261,14 @@ export class GameEngine {
   private keys = new Set<string>()
   private mouse: Vec = { x: WIDTH / 2, y: HEIGHT / 2 }
 
+  // touch virtual joystick (screen-space, canvas-internal coords)
+  private joyActive = false
+  private joyId = -1
+  private joyBase: Vec = { x: 0, y: 0 }
+  private joyKnob: Vec = { x: 0, y: 0 }
+  private joyVec: Vec = { x: 0, y: 0 }
+  private readonly JOY_R = 70
+
   private lastTs = 0
   private rafId = 0
   private shakeAmt = 0
@@ -454,13 +462,76 @@ export class GameEngine {
         y: ((cy - r.top) / r.height) * HEIGHT + this.cam.y,
       }
     }
-    this.canvas.addEventListener('pointermove', (e) => toWorld(e.clientX, e.clientY))
+    // ---- desktop: mouse aims, clicks cast ----
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse') toWorld(e.clientX, e.clientY)
+    })
     this.canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse') return
       toWorld(e.clientX, e.clientY)
       if (e.button === 0) this.castFire()
       if (e.button === 2) this.castDash()
     })
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+
+    // ---- touch: a drag-anywhere virtual joystick moves the hero ----
+    const screenPos = (cx: number, cy: number): Vec => {
+      const r = this.canvas.getBoundingClientRect()
+      return { x: ((cx - r.left) / r.width) * WIDTH, y: ((cy - r.top) / r.height) * HEIGHT }
+    }
+    this.canvas.addEventListener('touchstart', (e) => {
+      if (this.joyActive) return
+      const t = e.changedTouches[0]
+      this.joyId = t.identifier
+      this.joyActive = true
+      this.joyBase = screenPos(t.clientX, t.clientY)
+      this.joyKnob = { ...this.joyBase }
+      this.joyVec = { x: 0, y: 0 }
+      e.preventDefault()
+    }, { passive: false })
+    this.canvas.addEventListener('touchmove', (e) => {
+      if (!this.joyActive) return
+      for (const t of Array.from(e.changedTouches)) {
+        if (t.identifier !== this.joyId) continue
+        const p = screenPos(t.clientX, t.clientY)
+        let dx = p.x - this.joyBase.x
+        let dy = p.y - this.joyBase.y
+        const d = Math.hypot(dx, dy)
+        if (d > this.JOY_R) { dx = (dx / d) * this.JOY_R; dy = (dy / d) * this.JOY_R }
+        this.joyKnob = { x: this.joyBase.x + dx, y: this.joyBase.y + dy }
+        this.joyVec = { x: dx / this.JOY_R, y: dy / this.JOY_R }
+      }
+      e.preventDefault()
+    }, { passive: false })
+    const endTouch = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) {
+        if (t.identifier === this.joyId) {
+          this.joyActive = false
+          this.joyId = -1
+          this.joyVec = { x: 0, y: 0 }
+        }
+      }
+    }
+    this.canvas.addEventListener('touchend', endTouch)
+    this.canvas.addEventListener('touchcancel', endTouch)
+  }
+
+  /** Fire an ability from an on-screen (touch) button, auto-aimed at the swarm. */
+  castAbility(key: string) {
+    if (this.status !== 'playing') return
+    const h = this.hero
+    const t = this.nearestEnemy(99999)
+    if (t) {
+      this.mouse = { x: t.x, y: t.y }
+      h.aim = Math.atan2(t.y - h.y, t.x - h.x)
+    } else {
+      this.mouse = { x: h.x + Math.cos(h.aim) * 300, y: h.y + Math.sin(h.aim) * 300 }
+    }
+    if (key === 'Q') this.castDash()
+    else if (key === 'SPC') this.castWhirl()
+    else if (key === 'E') this.castFire()
+    else if (key === 'R') this.castUlt()
+    else if (key === 'F') this.castHeal()
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -929,14 +1000,24 @@ export class GameEngine {
         }
       }
     } else {
-      if (this.keys.has('a') || this.keys.has('arrowleft')) mvx -= 1
-      if (this.keys.has('d') || this.keys.has('arrowright')) mvx += 1
-      if (this.keys.has('w') || this.keys.has('arrowup')) mvy -= 1
-      if (this.keys.has('s') || this.keys.has('arrowdown')) mvy += 1
-      h.moving = mvx !== 0 || mvy !== 0
-      const len = Math.hypot(mvx, mvy) || 1
-      h.x += (mvx / len) * s.moveSpeed * dt
-      h.y += (mvy / len) * s.moveSpeed * dt
+      if (this.joyActive && (this.joyVec.x !== 0 || this.joyVec.y !== 0)) {
+        // touch joystick (analog)
+        mvx = this.joyVec.x
+        mvy = this.joyVec.y
+      } else {
+        // keyboard
+        if (this.keys.has('a') || this.keys.has('arrowleft')) mvx -= 1
+        if (this.keys.has('d') || this.keys.has('arrowright')) mvx += 1
+        if (this.keys.has('w') || this.keys.has('arrowup')) mvy -= 1
+        if (this.keys.has('s') || this.keys.has('arrowdown')) mvy += 1
+      }
+      const mag = Math.hypot(mvx, mvy)
+      h.moving = mag > 0.15
+      if (mag > 0) {
+        const f = (mag > 1 ? 1 / mag : 1) * s.moveSpeed * dt // normalize keyboard, keep analog joystick
+        h.x += mvx * f
+        h.y += mvy * f
+      }
     }
 
     // body faces the way it walks; when standing still it faces the cursor
@@ -1447,6 +1528,22 @@ export class GameEngine {
     }
     this.drawVignette()
     this.drawMinimap()
+    this.drawJoystick()
+    ctx.restore()
+  }
+
+  private drawJoystick() {
+    if (!this.joyActive) return
+    const ctx = this.ctx
+    ctx.save()
+    ctx.globalAlpha = 0.5
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+    ctx.lineWidth = 3
+    ctx.beginPath(); ctx.arc(this.joyBase.x, this.joyBase.y, this.JOY_R, 0, Math.PI * 2); ctx.stroke()
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'
+    ctx.beginPath(); ctx.arc(this.joyBase.x, this.joyBase.y, this.JOY_R, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'
+    ctx.beginPath(); ctx.arc(this.joyKnob.x, this.joyKnob.y, 26, 0, Math.PI * 2); ctx.fill()
     ctx.restore()
   }
 

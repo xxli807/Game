@@ -182,14 +182,14 @@ body {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 10px;
+  gap: clamp(8px, 2.5vw, 14px);
   pointer-events: none;
 }
 
 .ability {
   position: relative;
-  width: clamp(48px, 9vw, 62px);
-  height: clamp(48px, 9vw, 62px);
+  width: clamp(54px, 12vw, 64px);
+  height: clamp(54px, 12vw, 64px);
   border-radius: 12px;
   background: rgba(10, 12, 24, 0.85);
   border: 2px solid rgba(255, 255, 255, 0.2);
@@ -197,6 +197,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* tappable on touch devices */
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  color: inherit;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.ability:active {
+  transform: scale(0.92);
 }
 
 .ability.ready {
