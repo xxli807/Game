@@ -281,6 +281,21 @@ export interface AbilityView {
   manaCost: number
 }
 
+/** A single option shown in the level-up draft (stat card OR weapon). */
+export interface DraftChoice {
+  id: string
+  name: string
+  icon: string
+  desc: string
+  rarity: Rarity
+  tag?: string // e.g. "NEW WEAPON", "Lv 3"
+}
+
+export interface WeaponView {
+  icon: string
+  level: number
+}
+
 export interface HudState {
   status: GameStatus
   hp: number
@@ -300,7 +315,8 @@ export interface HudState {
   swordStyleIcon: string
   biome: string
   abilities: AbilityView[]
-  cards: Card[]
+  weapons: WeaponView[]
+  cards: DraftChoice[]
   // filled on death
   runWave: number
   runKills: number

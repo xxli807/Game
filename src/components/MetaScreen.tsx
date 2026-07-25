@@ -63,7 +63,8 @@ export default function MetaScreen({ meta, onBuy, onStart }: Props) {
             <li><b>WASD / Arrows</b> — move · <b>Mouse</b> — aim · survive the endless horde as long as you can</li>
             <li>📱 <b>On phone:</b> drag anywhere to move (virtual joystick) and tap the ability buttons to cast</li>
             <li>Your <b>sword swings automatically</b> in wide dynamic sweeps — just position yourself in the swarm</li>
-            <li>Slain beasts drop <b>XP gems</b> that fly to you — grab them to <b>level up fast</b> and draft upgrades</li>
+            <li>Slain beasts drop <b>XP gems</b> that fly to you — grab them to <b>level up fast</b></li>
+            <li>Each level, <b>draft a new auto-weapon or upgrade one</b> — spirit blades, wand, frost aura, axes, lightning — and build your own arsenal</li>
             <li><b>Q</b> Dash · <b>SPACE</b> Whirlwind · <b>E / Left-click</b> Fireball</li>
             <li><b>R</b> Meteor Storm (ultimate, aim with mouse) · <b>F</b> Battle Heal + shield</li>
             <li>Roam a <b>large 4-region world</b> — dungeon, forest, snow & volcano — each with its own beasts (see the minimap)</li>

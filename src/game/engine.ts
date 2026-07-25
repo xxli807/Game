@@ -1,10 +1,11 @@
 import {
   Stats,
-  Card,
   CARD_POOL,
   HudState,
   GameStatus,
   AbilityView,
+  DraftChoice,
+  Rarity,
 } from './types'
 import {
   Biome,
@@ -89,6 +90,7 @@ interface Enemy {
   elite: boolean
   ebiome: Biome // which region it belongs to (drives its look)
   slowT: number // frost slow timer
+  wCd: number // weapon damage tick cooldown (orbit/aura)
 }
 
 interface Decoration {
@@ -142,7 +144,12 @@ interface Projectile {
   damage: number
   life: number
   friendly: boolean
-  radius: number // explosion radius (fireball)
+  radius: number // explosion radius (fireball); 0 = none
+  pierce: number // enemies it can pass through (0 = dies on first hit)
+  homing: boolean
+  spin: number // visual spin for axes; 0 = draw as orb
+  color: string
+  hit: Set<Enemy> // enemies already hit (for piercing)
 }
 
 interface Particle {
@@ -206,6 +213,31 @@ const KIND_EMOJI: Record<EnemyKind, string> = {
   boss: '🐲',
 }
 
+// ---------- Auto-weapons (collected & levelled through the draft) ----------
+type WeaponId = 'orbit' | 'wand' | 'aura' | 'axe' | 'lightning'
+
+interface WeaponMeta {
+  id: WeaponId
+  name: string
+  icon: string
+  max: number
+  rarity: Rarity
+  blurb: string
+}
+
+const WEAPONS: Record<WeaponId, WeaponMeta> = {
+  orbit: { id: 'orbit', name: 'Spirit Blades', icon: '🗡️', max: 6, rarity: 'rare', blurb: 'Blades orbit you, shredding all they touch' },
+  wand: { id: 'wand', name: 'Magic Wand', icon: '✨', max: 6, rarity: 'common', blurb: 'Auto-fires homing bolts at the nearest foe' },
+  aura: { id: 'aura', name: 'Frost Aura', icon: '❄️', max: 5, rarity: 'rare', blurb: 'Pulses cold damage & slows nearby enemies' },
+  axe: { id: 'axe', name: 'War Axes', icon: '🪓', max: 6, rarity: 'common', blurb: 'Hurls spinning axes that pierce the horde' },
+  lightning: { id: 'lightning', name: 'Storm Call', icon: '⚡', max: 5, rarity: 'epic', blurb: 'Lightning zaps and chains between foes' },
+}
+const WEAPON_IDS = Object.keys(WEAPONS) as WeaponId[]
+const MAX_WEAPONS = 5
+
+interface OwnedWeapon { id: WeaponId; level: number; timer: number }
+interface Bolt { x1: number; y1: number; x2: number; y2: number; life: number }
+
 export class GameEngine {
   private ctx: CanvasRenderingContext2D
   private canvas: HTMLCanvasElement
@@ -230,7 +262,11 @@ export class GameEngine {
   private spawnTimer = 0
   private bossTimer = 45
   private swingFlip = 1
-  private cards: Card[] = []
+  private weapons: OwnedWeapon[] = []
+  private orbitAngle = 0
+  private bolts: Bolt[] = []
+  private choices: DraftChoice[] = []
+  private choiceActions: Record<string, () => void> = {}
   private decor: Decoration[] = []
   private ambient: Ambient[] = []
   private gems: Gem[] = []
@@ -325,6 +361,10 @@ export class GameEngine {
     this.ambient = []
     this.gems = []
     this.pickups = []
+    this.bolts = []
+    this.orbitAngle = 0
+    // begin every run with one random auto-weapon so it's lively from the start
+    this.weapons = [{ id: WEAPON_IDS[Math.floor(Math.random() * WEAPON_IDS.length)], level: 1, timer: 0 }]
     this.gold = 0
     this.freezeT = 0
     this.flash = 0
@@ -427,14 +467,8 @@ export class GameEngine {
 
   chooseCard(id: string) {
     if (this.status !== 'levelup') return
-    const card = this.cards.find((c) => c.id === id)
-    if (card) {
-      const before = this.stats.maxHp
-      card.apply(this.stats)
-      // heal by any max-hp gain
-      this.hero.hp += Math.max(0, this.stats.maxHp - before)
-      this.hero.hp = Math.min(this.hero.hp, this.stats.maxHp)
-    }
+    const action = this.choiceActions[id]
+    if (action) action()
     // maybe multiple pending level-ups
     if (this.hero.xp >= this.hero.xpToNext) {
       this.doLevelUp()
@@ -600,6 +634,7 @@ export class GameEngine {
       elite,
       ebiome: regionAt(x, y),
       slowT: 0,
+      wCd: 0,
     })
   }
 
@@ -664,17 +699,12 @@ export class GameEngine {
     const spread = 0.18
     for (let i = 0; i < n; i++) {
       const a = baseA + (i - (n - 1) / 2) * spread
-      this.projectiles.push({
-        x: h.x + Math.cos(a) * 24,
-        y: h.y + Math.sin(a) * 24,
-        vx: Math.cos(a) * 560,
-        vy: Math.sin(a) * 560,
-        r: 9,
-        damage: this.stats.fireDamage,
-        life: 1.4,
-        friendly: true,
-        radius: this.stats.fireRadius,
-      })
+      this.projectiles.push(this.mkProj(
+        h.x + Math.cos(a) * 24, h.y + Math.sin(a) * 24,
+        Math.cos(a) * 560, Math.sin(a) * 560,
+        this.stats.fireDamage, true,
+        { r: 9, life: 1.4, radius: this.stats.fireRadius },
+      ))
     }
   }
 
@@ -714,6 +744,19 @@ export class GameEngine {
     h.shieldT = this.stats.shieldTime
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 60, life: 0.35, color: 'rgba(120,255,170,0.7)' })
     this.floatText(h.x, h.y - 34, `+${Math.round(this.stats.healAmount)}`, '#69db7c', 22)
+  }
+
+  private mkProj(
+    x: number, y: number, vx: number, vy: number, damage: number, friendly: boolean,
+    opts?: { r?: number; life?: number; radius?: number; pierce?: number; homing?: boolean; spin?: number; color?: string },
+  ): Projectile {
+    return {
+      x, y, vx, vy, damage, friendly,
+      r: opts?.r ?? 8, life: opts?.life ?? 3, radius: opts?.radius ?? 0,
+      pierce: opts?.pierce ?? 0, homing: opts?.homing ?? false, spin: opts?.spin ?? 0,
+      color: opts?.color ?? (friendly ? '#ff922b' : '#b197fc'),
+      hit: new Set(),
+    }
   }
 
   private aimDir(): Vec {
@@ -926,26 +969,64 @@ export class GameEngine {
     h.xpToNext = Math.round(6 + h.level * 5 + h.level * h.level * 0.35)
     h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.1)
     this.status = 'levelup'
-    this.cards = this.pickCards()
+    this.buildChoices()
     this.emit()
   }
 
-  private pickCards(): Card[] {
-    const pool = [...CARD_POOL]
-    const out: Card[] = []
-    const weight = (c: Card) => (c.rarity === 'common' ? 6 : c.rarity === 'rare' ? 3 : 1.4)
+  /** Build the 3-option draft: new weapons, weapon upgrades, and stat cards. */
+  private buildChoices() {
+    type Opt = { choice: DraftChoice; apply: () => void; weight: number }
+    const opts: Opt[] = []
+
+    // weapon upgrades for weapons you already own
+    for (const w of this.weapons) {
+      const m = WEAPONS[w.id]
+      if (w.level >= m.max) continue
+      opts.push({
+        weight: m.rarity === 'epic' ? 3 : m.rarity === 'rare' ? 4 : 5,
+        choice: { id: `wup-${w.id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: `Lv ${w.level} → ${w.level + 1}` },
+        apply: () => { w.level++ },
+      })
+    }
+    // brand-new weapons (if you have a free slot)
+    if (this.weapons.length < MAX_WEAPONS) {
+      for (const id of WEAPON_IDS) {
+        if (this.weapons.some((w) => w.id === id)) continue
+        const m = WEAPONS[id]
+        opts.push({
+          weight: m.rarity === 'epic' ? 2.5 : m.rarity === 'rare' ? 3.5 : 4.5,
+          choice: { id: `wnew-${id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: '★ NEW WEAPON' },
+          apply: () => { this.weapons.push({ id, level: 1, timer: 0 }) },
+        })
+      }
+    }
+    // stat / ability cards
+    for (const c of CARD_POOL) {
+      opts.push({
+        weight: c.rarity === 'common' ? 4 : c.rarity === 'rare' ? 2.2 : 1.1,
+        choice: { id: c.id, name: c.name, icon: c.icon, desc: c.desc, rarity: c.rarity },
+        apply: () => {
+          const before = this.stats.maxHp
+          c.apply(this.stats)
+          this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + Math.max(0, this.stats.maxHp - before))
+        },
+      })
+    }
+
+    // weighted pick of 3 distinct options
+    const chosen: Opt[] = []
+    const pool = [...opts]
     for (let i = 0; i < 3 && pool.length; i++) {
-      const total = pool.reduce((a, c) => a + weight(c), 0)
+      const total = pool.reduce((a, o) => a + o.weight, 0)
       let r = Math.random() * total
       let idx = 0
-      for (let j = 0; j < pool.length; j++) {
-        r -= weight(pool[j])
-        if (r <= 0) { idx = j; break }
-      }
-      out.push(pool[idx])
+      for (let j = 0; j < pool.length; j++) { r -= pool[j].weight; if (r <= 0) { idx = j; break } }
+      chosen.push(pool[idx])
       pool.splice(idx, 1)
     }
-    return out
+    this.choices = chosen.map((o) => o.choice)
+    this.choiceActions = {}
+    for (const o of chosen) this.choiceActions[o.choice.id] = o.apply
   }
 
   // ---------- main loop ----------
@@ -1073,6 +1154,9 @@ export class GameEngine {
       this.swordSwing(this.nearestEnemy(s.swordRange + 200))
     }
 
+    // auto-weapons fire on their own
+    this.updateWeapons(dt)
+
     // survival difficulty ramps with time; enemies stream in endlessly
     this.survTime += dt
     this.wave = 1 + Math.floor(this.survTime / 22)
@@ -1118,6 +1202,8 @@ export class GameEngine {
     this.slashes = this.slashes.filter((s) => s.life > 0)
     for (const r of this.rings) { r.life -= dt; r.r += (r.maxR - r.r) * Math.min(1, dt * 10) }
     this.rings = this.rings.filter((r) => r.life > 0)
+    for (const b of this.bolts) b.life -= dt
+    this.bolts = this.bolts.filter((b) => b.life > 0)
     for (const p of this.particles) {
       p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 120 * dt; p.life -= dt
     }
@@ -1182,11 +1268,111 @@ export class GameEngine {
     return best
   }
 
+  // ---------- auto-weapons ----------
+  private updateWeapons(dt: number) {
+    const h = this.hero
+    this.orbitAngle += dt * 2.4
+    for (const w of this.weapons) {
+      w.timer -= dt
+      const L = w.level
+      switch (w.id) {
+        case 'orbit': {
+          // continuous — blades whirl around the hero and shred on contact
+          const count = 1 + L
+          const rad = 62 + L * 8
+          const dmg = 6 + L * 4
+          for (let i = 0; i < count; i++) {
+            const a = this.orbitAngle + (i / count) * Math.PI * 2
+            const bx = h.x + Math.cos(a) * rad
+            const by = h.y + Math.sin(a) * rad
+            for (const e of this.enemies) {
+              if (e.wCd > 0) continue
+              if (Math.hypot(e.x - bx, e.y - by) < e.radius + 12) {
+                this.damageEnemy(e, dmg, true)
+                e.wCd = 0.25
+              }
+            }
+          }
+          break
+        }
+        case 'wand':
+          if (w.timer <= 0) {
+            w.timer = Math.max(0.35, 1.1 - L * 0.12)
+            const shots = 1 + Math.floor(L / 2)
+            for (let i = 0; i < shots; i++) {
+              const t = this.pickEnemy(i)
+              const a = t ? Math.atan2(t.y - h.y, t.x - h.x) : Math.random() * Math.PI * 2
+              this.projectiles.push(this.mkProj(h.x, h.y, Math.cos(a) * 460, Math.sin(a) * 460, 10 + L * 6, true, { r: 7, life: 2, homing: true, pierce: 0, color: '#74c0fc' }))
+            }
+          }
+          break
+        case 'aura':
+          if (w.timer <= 0) {
+            w.timer = 0.7
+            const rad = 90 + L * 22
+            const dmg = 5 + L * 4
+            this.rings.push({ x: h.x, y: h.y, r: 10, maxR: rad, life: 0.35, color: 'rgba(140,220,255,0.5)' })
+            for (const e of this.enemies) {
+              if (Math.hypot(e.x - h.x, e.y - h.y) < rad + e.radius) {
+                this.damageEnemy(e, dmg, true)
+                e.slowT = 1.2
+              }
+            }
+          }
+          break
+        case 'axe':
+          if (w.timer <= 0) {
+            w.timer = Math.max(0.6, 1.6 - L * 0.15)
+            const count = 1 + Math.floor((L + 1) / 2)
+            for (let i = 0; i < count; i++) {
+              const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6
+              this.projectiles.push(this.mkProj(h.x, h.y, Math.cos(a) * 320, Math.sin(a) * 320 - 120, 16 + L * 8, true, { r: 11, life: 1.6, pierce: 2 + L, spin: 1, color: '#dbb48a' }))
+            }
+          }
+          break
+        case 'lightning':
+          if (w.timer <= 0) {
+            w.timer = Math.max(0.5, 1.4 - L * 0.16)
+            this.castChainLightning(20 + L * 12, 2 + L)
+          }
+          break
+      }
+    }
+  }
+
+  private pickEnemy(n: number): Enemy | null {
+    // nth-nearest-ish: just pick among the closest few
+    const sorted = this.enemies
+      .map((e) => ({ e, d: (e.x - this.hero.x) ** 2 + (e.y - this.hero.y) ** 2 }))
+      .sort((a, b) => a.d - b.d)
+    return sorted[n]?.e ?? sorted[0]?.e ?? null
+  }
+
+  private castChainLightning(dmg: number, jumps: number) {
+    const hitSet = new Set<Enemy>()
+    let src = { x: this.hero.x, y: this.hero.y }
+    for (let j = 0; j < jumps; j++) {
+      let best: Enemy | null = null
+      let bestD = 320 ** 2
+      for (const e of this.enemies) {
+        if (hitSet.has(e)) continue
+        const d = (e.x - src.x) ** 2 + (e.y - src.y) ** 2
+        if (d < bestD) { bestD = d; best = e }
+      }
+      if (!best) break
+      hitSet.add(best)
+      this.bolts.push({ x1: src.x, y1: src.y, x2: best.x, y2: best.y, life: 0.18 })
+      this.damageEnemy(best, dmg, true)
+      src = { x: best.x, y: best.y }
+    }
+  }
+
   private updateEnemies(dt: number) {
     const h = this.hero
     for (const e of this.enemies) {
       if (e.hitFlash > 0) e.hitFlash -= dt
       if (e.slowT > 0) e.slowT -= dt
+      if (e.wCd > 0) e.wCd -= dt
       e.phase += dt * 5
       e.facing = h.x < e.x ? -1 : 1
       const spd = this.freezeT > 0 ? 0 : e.speed * (e.slowT > 0 ? 0.45 : 1)
@@ -1207,11 +1393,7 @@ export class GameEngine {
         e.shoot -= dt
         if (e.shoot <= 0) {
           e.shoot = 2.2
-          this.projectiles.push({
-            x: e.x, y: e.y,
-            vx: Math.cos(a) * 320, vy: Math.sin(a) * 320,
-            r: 8, damage: e.damage, life: 3, friendly: false, radius: 0,
-          })
+          this.projectiles.push(this.mkProj(e.x, e.y, Math.cos(a) * 320, Math.sin(a) * 320, e.damage, false))
         }
       } else {
         e.x += Math.cos(a) * spd * dt
@@ -1222,11 +1404,7 @@ export class GameEngine {
             e.shoot = 3
             for (let i = 0; i < 8; i++) {
               const ba = (i / 8) * Math.PI * 2
-              this.projectiles.push({
-                x: e.x, y: e.y,
-                vx: Math.cos(ba) * 240, vy: Math.sin(ba) * 240,
-                r: 9, damage: e.damage * 0.6, life: 3, friendly: false, radius: 0,
-              })
+              this.projectiles.push(this.mkProj(e.x, e.y, Math.cos(ba) * 240, Math.sin(ba) * 240, e.damage * 0.6, false, { r: 9 }))
             }
           }
         }
@@ -1250,31 +1428,48 @@ export class GameEngine {
   private updateProjectiles(dt: number) {
     const h = this.hero
     for (const p of this.projectiles) {
+      // homing bolts steer toward the nearest enemy
+      if (p.homing) {
+        const t = this.nearestEnemyTo(p.x, p.y)
+        if (t) {
+          const sp = Math.hypot(p.vx, p.vy) || 400
+          const a = Math.atan2(t.y - p.y, t.x - p.x)
+          p.vx += (Math.cos(a) * sp - p.vx) * Math.min(1, dt * 6)
+          p.vy += (Math.sin(a) * sp - p.vy) * Math.min(1, dt * 6)
+        }
+      }
       p.x += p.vx * dt
       p.y += p.vy * dt
       p.life -= dt
+      if (p.spin) p.spin += dt * 14
+
       if (p.friendly) {
         for (const e of this.enemies) {
+          if (p.hit.has(e)) continue
           if (Math.hypot(e.x - p.x, e.y - p.y) < e.radius + p.r) {
-            this.explodeFire(p)
-            p.life = 0
-            break
+            if (p.radius > 0) { this.explodeFire(p); p.life = 0; break }
+            this.damageEnemy(e, p.damage, true)
+            p.hit.add(e)
+            if (p.pierce <= 0) { p.life = 0; break }
+            p.pierce--
           }
         }
-      } else {
-        if (h.invuln <= 0 && Math.hypot(h.x - p.x, h.y - p.y) < 20 + p.r) {
-          this.hurtHero(p.damage)
-          p.life = 0
-        }
+      } else if (h.invuln <= 0 && h.shieldT <= 0 && Math.hypot(h.x - p.x, h.y - p.y) < 20 + p.r) {
+        this.hurtHero(p.damage)
+        p.life = 0
       }
     }
-    // expired fireballs still explode
-    this.projectiles = this.projectiles.filter((p) => {
-      if (p.life <= 0 && p.friendly && p.radius > 0) {
-        // avoid double explode (already exploded sets life 0 after explode) -> use flag via radius check on distance? simpler: explode only if off-screen expiry
-      }
-      return p.life > 0 && p.x > -60 && p.x < WIDTH + 60 && p.y > -60 && p.y < HEIGHT + 60
-    })
+    this.projectiles = this.projectiles.filter((p) => p.life > 0)
+  }
+
+  private nearestEnemyTo(x: number, y: number): Enemy | null {
+    let best: Enemy | null = null
+    let bestD = Infinity
+    for (const e of this.enemies) {
+      const d = (e.x - x) ** 2 + (e.y - y) ** 2
+      if (d < bestD) { bestD = d; best = e }
+    }
+    return best
   }
 
   private explodeFire(p: Projectile) {
@@ -1481,24 +1676,76 @@ export class GameEngine {
     ctx.textBaseline = 'middle'
     for (const e of this.enemies) this.drawEnemy(e)
 
-    // projectiles (glowing orbs with a soft trail)
+    // projectiles
     ctx.save()
     for (const p of this.projectiles) {
-      const glow = p.friendly ? '#ff922b' : '#b197fc'
-      const core = p.friendly ? '#fff3bf' : '#f3f0ff'
+      if (p.spin) {
+        // spinning axe
+        ctx.save()
+        ctx.translate(p.x, p.y)
+        ctx.rotate(p.spin)
+        ctx.shadowColor = '#000'; ctx.shadowBlur = 4
+        ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 3; ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -8); ctx.stroke()
+        ctx.fillStyle = '#cfd6e0'
+        ctx.beginPath(); ctx.moveTo(-2, -8); ctx.quadraticCurveTo(9, -10, 8, -2); ctx.quadraticCurveTo(2, -3, -2, -8); ctx.fill()
+        ctx.restore()
+        continue
+      }
+      const glow = p.color
       ctx.shadowColor = glow
-      ctx.shadowBlur = 16
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-      ctx.fillStyle = glow
-      ctx.fill()
+      ctx.shadowBlur = 14
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+      ctx.fillStyle = glow; ctx.fill()
       ctx.shadowBlur = 0
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, p.r * 0.5, 0, Math.PI * 2)
-      ctx.fillStyle = core
-      ctx.fill()
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.5, 0, Math.PI * 2)
+      ctx.fillStyle = '#ffffff'; ctx.fill()
     }
     ctx.restore()
+
+    // lightning bolts
+    if (this.bolts.length) {
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.strokeStyle = '#fff6c2'; ctx.shadowColor = '#ffe066'; ctx.shadowBlur = 12
+      for (const b of this.bolts) {
+        ctx.globalAlpha = Math.max(0, b.life / 0.18)
+        ctx.lineWidth = 2.5
+        ctx.beginPath()
+        ctx.moveTo(b.x1, b.y1)
+        const segs = 5
+        for (let i = 1; i < segs; i++) {
+          const t = i / segs
+          const jx = (Math.random() - 0.5) * 16
+          const jy = (Math.random() - 0.5) * 16
+          ctx.lineTo(b.x1 + (b.x2 - b.x1) * t + jx, b.y1 + (b.y2 - b.y1) * t + jy)
+        }
+        ctx.lineTo(b.x2, b.y2)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+
+    // orbiting spirit blades
+    const orbit = this.weapons.find((w) => w.id === 'orbit')
+    if (orbit) {
+      const count = 1 + orbit.level
+      const rad = 62 + orbit.level * 8
+      ctx.save()
+      for (let i = 0; i < count; i++) {
+        const a = this.orbitAngle + (i / count) * Math.PI * 2
+        const bx = this.hero.x + Math.cos(a) * rad
+        const by = this.hero.y + Math.sin(a) * rad
+        ctx.save()
+        ctx.translate(bx, by)
+        ctx.rotate(a + Math.PI / 2)
+        ctx.shadowColor = '#a5d8ff'; ctx.shadowBlur = 10
+        ctx.fillStyle = '#e7f5ff'
+        ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(3, 6); ctx.lineTo(0, 10); ctx.lineTo(-3, 6); ctx.closePath(); ctx.fill()
+        ctx.restore()
+      }
+      ctx.restore()
+    }
 
     this.drawHero()
 
@@ -2022,7 +2269,8 @@ export class GameEngine {
       swordStyleIcon: SWORD_STYLES[this.swordStyleId].icon,
       biome: BIOMES[this.biome].name,
       abilities: ab,
-      cards: this.status === 'levelup' ? this.cards : [],
+      weapons: this.weapons.map((w) => ({ icon: WEAPONS[w.id].icon, level: w.level })),
+      cards: this.status === 'levelup' ? this.choices : [],
       runWave: this.wave,
       runKills: this.kills,
       essenceEarned: this.wave * 6 + this.kills * 2 + this.eliteKills * 8 + this.gold,

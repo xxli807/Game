@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
-import { Card } from '../game/types'
+import { DraftChoice } from '../game/types'
 
 interface Props {
-  cards: Card[]
+  cards: DraftChoice[]
   onPick: (id: string) => void
 }
 
@@ -26,6 +26,7 @@ export default function LevelUpModal({ cards, onPick }: Props) {
           {cards.map((c, i) => (
             <button key={c.id} className={`card card-${c.rarity}`} onClick={() => onPick(c.id)}>
               <div className="card-num">{i + 1}</div>
+              {c.tag && <div className="card-tag">{c.tag}</div>}
               <div className="card-icon">{c.icon}</div>
               <div className="card-name">{c.name}</div>
               <div className="card-rarity">{c.rarity}</div>

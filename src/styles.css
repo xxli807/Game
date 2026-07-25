@@ -310,6 +310,45 @@ body {
   font-size: 12px;
   opacity: 0.55;
 }
+
+.card-tag {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  color: #ffd43b;
+  text-transform: uppercase;
+}
+
+.weapons {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.weapon-chip {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.weapon-icon { font-size: 17px; }
+.weapon-lvl {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  font-size: 10px;
+  font-weight: bold;
+  color: var(--gold);
+  text-shadow: 0 1px 2px #000;
+}
 .card-icon { font-size: 42px; }
 .card-name { font-weight: bold; font-size: clamp(15px, 2.4vw, 18px); margin-top: 6px; }
 .card-rarity {

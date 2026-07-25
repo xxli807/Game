@@ -25,6 +25,14 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
           <Bar className="hp" pct={hpPct} label={`❤️ ${state.hp}/${state.maxHp}`} />
           <Bar className="mp" pct={mpPct} label={`🔵 ${state.mana}/${state.maxMana}`} />
         </div>
+        <div className="weapons">
+          {state.weapons.map((w, i) => (
+            <div key={i} className="weapon-chip" title={`Level ${w.level}`}>
+              <span className="weapon-icon">{w.icon}</span>
+              <span className="weapon-lvl">{w.level}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* top-right run info */}
