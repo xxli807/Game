@@ -489,7 +489,7 @@ export class GameEngine {
       this.addDecor(WORLD_W * 0.14 + i * 46, WORLD_H * 0.18, 'pillar', 1.2)
       this.addDecor(WORLD_W * 0.14 + i * 46, WORLD_H * 0.34, 'pillar', 1.2)
     }
-    this.cluster(WORLD_W * 0.22, WORLD_H * 0.26, 200, 16, ['bones', 'rubble'])
+    this.cluster(WORLD_W * 0.22, WORLD_H * 0.26, 200, 8, ['rubble'])
     this.addDecor(WORLD_W * 0.30, WORLD_H * 0.14, 'statue', 2.0)
     // the central plaza obelisk
     this.addDecor(this.plaza.x, this.plaza.y, 'obelisk', 2.6)
