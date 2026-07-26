@@ -270,7 +270,7 @@ export const CARD_POOL: Card[] = [
 ]
 
 // ---------- Live snapshot for the React HUD ----------
-export type GameStatus = 'menu' | 'playing' | 'levelup' | 'dead'
+export type GameStatus = 'menu' | 'playing' | 'levelup' | 'paused' | 'dead'
 
 export interface AbilityView {
   key: string

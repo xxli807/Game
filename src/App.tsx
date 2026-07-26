@@ -105,11 +105,22 @@ function GameScreen({
         <LevelUpModal cards={hud.cards} onPick={(id) => engineRef.current?.chooseCard(id)} />
       )}
 
+      {hud?.status === 'paused' && (
+        <div className="overlay">
+          <div className="death-card">
+            <h1>⏸ Paused</h1>
+            <p>Level <b>{hud.level}</b> · <b>{hud.kills}</b> kills</p>
+            <button className="play-btn" onClick={() => engineRef.current?.resume()}>▶ Resume</button>
+            <button className="exit-btn-inline" onClick={onExit}>Quit to Forge</button>
+          </div>
+        </div>
+      )}
+
       {hud?.status === 'dead' && (
         <div className="overlay">
           <div className="death-card">
             <h1>☠️ You Fell</h1>
-            <p>Reached <b>Wave {hud.runWave}</b> · <b>{hud.runKills}</b> kills</p>
+            <p>Reached <b>Level {hud.level}</b> · <b>{hud.runKills}</b> kills</p>
             <p className="essence-earned">🔮 +{hud.essenceEarned} Essence earned</p>
             <p className="death-hint">Spend it in the Forge to sharpen your sword for the next descent.</p>
             <button className="play-btn" onClick={onExit}>🔨 Return to Forge</button>
@@ -117,6 +128,11 @@ function GameScreen({
         </div>
       )}
 
+      {hud && hud.status !== 'dead' && (
+        <button className="pause-btn" onClick={() => engineRef.current?.togglePause()}>
+          {hud.status === 'paused' ? '▶' : '⏸'}
+        </button>
+      )}
       <button className="exit-btn" onClick={onExit}>✕</button>
     </div>
   )

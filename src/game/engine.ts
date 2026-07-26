@@ -237,6 +237,7 @@ const MAX_WEAPONS = 5
 
 interface OwnedWeapon { id: WeaponId; level: number; timer: number }
 interface Bolt { x1: number; y1: number; x2: number; y2: number; life: number }
+interface LevelOpt { choice: DraftChoice; apply: () => void; weight: number }
 
 export class GameEngine {
   private ctx: CanvasRenderingContext2D
@@ -479,6 +480,19 @@ export class GameEngine {
     this.emit()
   }
 
+  pause() {
+    if (this.status === 'playing') { this.status = 'paused'; this.emit() }
+  }
+
+  resume() {
+    if (this.status === 'paused') { this.status = 'playing'; this.lastTs = performance.now(); this.emit() }
+  }
+
+  togglePause() {
+    if (this.status === 'playing') this.pause()
+    else if (this.status === 'paused') this.resume()
+  }
+
   destroy() {
     cancelAnimationFrame(this.rafId)
     window.removeEventListener('keydown', this.onKeyDown)
@@ -571,6 +585,7 @@ export class GameEngine {
   private onKeyDown = (e: KeyboardEvent) => {
     const k = e.key.toLowerCase()
     this.keys.add(k)
+    if (k === 'p' || k === 'escape') { this.togglePause(); return }
     if (this.status !== 'playing') return
     if (k === 'q') this.castDash()
     if (k === 'e') this.castFire()
@@ -582,8 +597,9 @@ export class GameEngine {
     this.keys.delete(e.key.toLowerCase())
   }
 
+  // enemy power grows with survival time, hero level, and sword level
   private scale(): number {
-    return 1 + (this.wave - 1) * 0.2 + (this.opts.swordLvl - 1) * 0.13
+    return 1 + (this.wave - 1) * 0.18 + (this.hero.level - 1) * 0.05 + (this.opts.swordLvl - 1) * 0.13
   }
 
   private spawnEnemy(force?: EnemyKind) {
@@ -592,12 +608,12 @@ export class GameEngine {
     if (force) {
       kind = force
     } else {
+      // as you level up, tougher enemy types make up more of the horde
+      const threat = this.wave + Math.floor(this.hero.level / 2)
       const roll = Math.random()
-      const w = this.wave
-      if (roll < 0.5) kind = 'grunt'
-      else if (roll < 0.75 && w >= 2) kind = 'fast'
-      else if (roll < 0.9 && w >= 3) kind = 'tank'
-      else if (w >= 4) kind = 'ranged'
+      if (threat >= 4 && roll < 0.18) kind = 'ranged'
+      else if (threat >= 3 && roll < 0.4) kind = 'tank'
+      else if (threat >= 2 && roll < 0.7) kind = 'fast'
       else kind = 'grunt'
     }
 
@@ -622,7 +638,7 @@ export class GameEngine {
       kind,
       emoji: KIND_EMOJI[kind],
       radius: spec.radius * (elite ? 1.35 : 1),
-      speed: spec.speed * (elite ? 0.92 : 1),
+      speed: spec.speed * (elite ? 0.92 : 1) * (1 + this.hero.level * 0.012),
       damage: spec.damage * (elite ? 1.4 : 1),
       touch: 0,
       shoot: 1 + Math.random(),
@@ -969,56 +985,86 @@ export class GameEngine {
     h.level++
     h.xpToNext = Math.round(6 + h.level * 5 + h.level * h.level * 0.35)
     h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.1)
-    // auto-pick an upgrade so the action never stops — no pause menu
-    const pick = this.autoPickUpgrade()
-    pick.apply()
-    const label = pick.kind === 'new' ? `${pick.choice.icon} NEW: ${pick.choice.name}!`
-      : pick.kind === 'up' ? `${pick.choice.icon} ${pick.choice.name} ${pick.choice.tag ?? ''}`
-        : `${pick.choice.icon} ${pick.choice.name}`
-    this.floatText(h.x, h.y - 48, `⬆ LV ${h.level}`, '#e599f7', 26)
-    this.floatText(h.x, h.y - 26, label, pick.kind === 'stat' ? '#fff' : '#ffd43b', 18)
-    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 70, life: 0.4, color: 'rgba(204,93,232,0.6)' })
+    // every 5th level a big boss marches in
+    if (h.level % 5 === 0) this.spawnMegaBoss()
+    // pause and let the player pick a skill
+    this.status = 'levelup'
+    this.buildChoices()
     this.emit()
   }
 
-  private autoPickUpgrade() {
-    type Opt = { choice: DraftChoice; apply: () => void; kind: 'new' | 'up' | 'stat' }
-    const news: Opt[] = []
-    const ups: Opt[] = []
-    const stats: Opt[] = []
+  private buildChoices() {
+    const opts = this.levelUpOptions()
+    // weighted pick of 3 distinct options
+    const chosen: LevelOpt[] = []
+    const pool = [...opts]
+    for (let i = 0; i < 3 && pool.length; i++) {
+      const total = pool.reduce((a, o) => a + o.weight, 0)
+      let r = Math.random() * total
+      let idx = 0
+      for (let j = 0; j < pool.length; j++) { r -= pool[j].weight; if (r <= 0) { idx = j; break } }
+      chosen.push(pool[idx])
+      pool.splice(idx, 1)
+    }
+    this.choices = chosen.map((o) => o.choice)
+    this.choiceActions = {}
+    for (const o of chosen) this.choiceActions[o.choice.id] = o.apply
+  }
 
+  private levelUpOptions(): LevelOpt[] {
+    const opts: LevelOpt[] = []
+    // upgrade weapons you own
     for (const w of this.weapons) {
       const m = WEAPONS[w.id]
       if (w.level >= m.max) continue
-      ups.push({ kind: 'up', apply: () => { w.level++ }, choice: { id: `wup-${w.id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: `Lv ${w.level + 1}` } })
+      opts.push({
+        weight: m.rarity === 'epic' ? 3 : m.rarity === 'rare' ? 4 : 5,
+        choice: { id: `wup-${w.id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: `Lv ${w.level} → ${w.level + 1}` },
+        apply: () => { w.level++ },
+      })
     }
+    // brand-new weapons (free slot)
     if (this.weapons.length < MAX_WEAPONS) {
       for (const id of WEAPON_IDS) {
         if (this.weapons.some((w) => w.id === id)) continue
         const m = WEAPONS[id]
-        news.push({ kind: 'new', apply: () => { this.weapons.push({ id, level: 1, timer: 0 }) }, choice: { id: `wnew-${id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity } })
+        opts.push({
+          weight: m.rarity === 'epic' ? 2.5 : m.rarity === 'rare' ? 3.5 : 4.5,
+          choice: { id: `wnew-${id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: '★ NEW WEAPON' },
+          apply: () => { this.weapons.push({ id, level: 1, timer: 0 }) },
+        })
       }
     }
+    // stat / ability cards
     for (const c of CARD_POOL) {
-      stats.push({
-        kind: 'stat',
+      opts.push({
+        weight: c.rarity === 'common' ? 4 : c.rarity === 'rare' ? 2.2 : 1.1,
+        choice: { id: c.id, name: c.name, icon: c.icon, desc: c.desc, rarity: c.rarity },
         apply: () => {
           const before = this.stats.maxHp
           c.apply(this.stats)
           this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + Math.max(0, this.stats.maxHp - before))
         },
-        choice: { id: c.id, name: c.name, icon: c.icon, desc: c.desc, rarity: c.rarity },
       })
     }
+    return opts
+  }
 
-    const rand = (arr: Opt[]) => arr[Math.floor(Math.random() * arr.length)]
-    const r = Math.random()
-    // early: fill the arsenal; mid: level weapons; always some stat variety
-    if (news.length && this.weapons.length < 4 && r < 0.65) return rand(news)
-    if (ups.length && r < 0.7) return rand(ups)
-    if (news.length && r < 0.85) return rand(news)
-    if (stats.length) return rand(stats)
-    return rand(ups.length ? ups : news)
+  private spawnMegaBoss() {
+    const h = this.hero
+    // spawn a boss and beef it up to a "big boss"
+    const before = this.enemies.length
+    this.spawnEnemy('boss')
+    const boss = this.enemies[before]
+    if (boss) {
+      boss.hp *= 2.4
+      boss.maxHp = boss.hp
+      boss.radius *= 1.4
+      boss.damage *= 1.3
+      boss.elite = true
+    }
+    this.floatText(h.x, h.y - 70, '⚠ BIG BOSS APPROACHES!', '#ff6b6b', 30)
+    this.shake(14)
   }
 
   // ---------- main loop ----------
@@ -1152,7 +1198,7 @@ export class GameEngine {
     // survival difficulty ramps with time; enemies stream in endlessly
     this.survTime += dt
     this.wave = 1 + Math.floor(this.survTime / 22)
-    const targetPop = Math.min(this.MAX_ENEMIES, 18 + Math.floor(this.survTime * 0.9))
+    const targetPop = Math.min(this.MAX_ENEMIES, 18 + Math.floor(this.survTime * 0.8) + this.hero.level * 2)
     this.spawnTimer -= dt
     if (this.spawnTimer <= 0 && this.enemies.length < targetPop) {
       const burst = 1 + Math.floor(this.wave / 3)

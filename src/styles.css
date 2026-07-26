@@ -60,6 +60,35 @@ body {
   color: #fff;
   font-size: 16px;
   cursor: pointer;
+  z-index: 5;
+}
+
+.pause-btn {
+  position: absolute;
+  top: 8px;
+  right: 44px;
+  width: 34px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  z-index: 5;
+}
+.pause-btn:active { transform: scale(0.92); }
+
+.exit-btn-inline {
+  display: block;
+  margin: 12px auto 0;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--font);
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* ---------------- HUD ---------------- */
@@ -152,9 +181,12 @@ body {
 
 .hud-info {
   position: absolute;
-  top: 24px;
-  right: 46px;
+  top: 44px;
+  right: 12px;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 60%;
   gap: 6px;
   pointer-events: none;
 }
