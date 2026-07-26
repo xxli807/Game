@@ -19,3 +19,7 @@ yarn-error.log*
 !.vscode/extensions.json
 .idea
 *.local
+
+# local scratch (screenshots, debug scripts)
+_*.png
+_*.mjs
