@@ -282,6 +282,9 @@ export class GameEngine {
 
   // painted ground textures per biome (loaded from public/arts)
   private tileImgs: Partial<Record<Biome, HTMLImageElement>> = {}
+  // character / enemy sprites
+  private heroImg?: HTMLImageElement
+  private enemyImgs: Partial<Record<EnemyKind, HTMLImageElement>> = {}
 
   // ---- designed world landmarks ----
   private readonly plaza = { x: WORLD_W / 2, y: WORLD_H / 2, r: 210 }
@@ -327,12 +330,29 @@ export class GameEngine {
 
   private loadArt() {
     const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/'
+    const load = (file: string) => { const i = new Image(); i.src = `${base}arts/${file}.png`; return i }
     const biomes: Biome[] = ['dungeon', 'forest', 'snow', 'volcano']
-    for (const b of biomes) {
-      const img = new Image()
-      img.src = `${base}arts/tile_${b}.png`
-      this.tileImgs[b] = img
+    for (const b of biomes) this.tileImgs[b] = load(`tile_${b}`)
+    this.heroImg = load('hero')
+    const enemyFile: Record<EnemyKind, string> = {
+      grunt: 'enemy_goblin', fast: 'enemy_bat', tank: 'enemy_brute', ranged: 'enemy_caster', boss: 'boss_dragon',
     }
+    for (const k of Object.keys(enemyFile) as EnemyKind[]) this.enemyImgs[k] = load(enemyFile[k])
+  }
+
+  private ready(img?: HTMLImageElement): img is HTMLImageElement {
+    return !!img && img.complete && img.naturalWidth > 0
+  }
+
+  /** Draw a sprite anchored at its feet, flipped by facing, with a pop scale. */
+  private blit(img: HTMLImageElement, cx: number, footY: number, targetH: number, facing: number, pop = 1) {
+    const ctx = this.ctx
+    const w = targetH * (img.naturalWidth / img.naturalHeight)
+    ctx.save()
+    ctx.translate(cx, footY)
+    ctx.scale(facing * pop, pop)
+    ctx.drawImage(img, -w / 2, -targetH, w, targetH)
+    ctx.restore()
   }
 
   // ---------- lifecycle ----------
@@ -2306,12 +2326,47 @@ export class GameEngine {
 
   private drawEnemy(e: Enemy) {
     const ctx = this.ctx
-    this.drawShadow(e.x, e.y + e.radius * 0.7, e.radius * 0.8)
-    drawCreature(ctx, {
-      x: e.x, y: e.y, kind: e.kind, radius: e.radius,
-      facing: e.facing, phase: e.phase, hitFlash: e.hitFlash,
-      elite: e.elite, pal: BIOMES[e.ebiome],
-    })
+    const img = this.enemyImgs[e.kind]
+    // elite aura
+    if (e.elite) {
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.globalAlpha = 0.4 + Math.sin(e.phase * 2) * 0.12
+      const ag = ctx.createRadialGradient(e.x, e.y, 4, e.x, e.y, e.radius * 1.8)
+      ag.addColorStop(0, 'rgba(255,215,80,0.5)')
+      ag.addColorStop(1, 'rgba(255,215,80,0)')
+      ctx.fillStyle = ag
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.radius * 1.8, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+    }
+    this.drawShadow(e.x, e.y + e.radius * 0.85, e.radius * 0.9)
+    if (this.ready(img)) {
+      const pop = 1 + Math.max(0, e.hitFlash) * 1.8
+      const bob = Math.sin(e.phase) * (e.radius * 0.05)
+      this.blit(img, e.x, e.y + e.radius * 0.9 - bob, e.radius * 2.9, e.facing, pop)
+      if (e.hitFlash > 0) { // white flash overlay
+        ctx.save()
+        ctx.globalAlpha = e.hitFlash * 5
+        ctx.globalCompositeOperation = 'lighter'
+        this.blit(img, e.x, e.y + e.radius * 0.9 - bob, e.radius * 2.9, e.facing, pop)
+        ctx.restore()
+      }
+    } else {
+      drawCreature(ctx, {
+        x: e.x, y: e.y, kind: e.kind, radius: e.radius,
+        facing: e.facing, phase: e.phase, hitFlash: e.hitFlash,
+        elite: e.elite, pal: BIOMES[e.ebiome],
+      })
+    }
+    // elite crown
+    if (e.elite) {
+      ctx.fillStyle = '#ffd43b'
+      const cy = e.y - e.radius * 1.35
+      ctx.beginPath()
+      ctx.moveTo(e.x - 9, cy); ctx.lineTo(e.x - 9, cy - 7); ctx.lineTo(e.x - 4, cy - 3)
+      ctx.lineTo(e.x, cy - 9); ctx.lineTo(e.x + 4, cy - 3); ctx.lineTo(e.x + 9, cy - 7); ctx.lineTo(e.x + 9, cy)
+      ctx.closePath(); ctx.fill()
+    }
     // health bar
     if (e.hp < e.maxHp) {
       const w = e.radius * 2
@@ -2348,19 +2403,36 @@ export class GameEngine {
     ctx.beginPath(); ctx.arc(h.x, h.y - 6, 40, 0, Math.PI * 2); ctx.fill()
     ctx.restore()
 
-    this.drawShadow(h.x, h.y + 22, 16)
-    // draw the character slightly larger so it reads as the hero of the scene
-    ctx.save()
-    ctx.translate(h.x, h.y)
-    ctx.scale(1.1, 1.1)
-    ctx.translate(-h.x, -h.y)
-    drawKnight(ctx, {
-      x: h.x, y: h.y, facing: h.facing, walkPhase: h.walkPhase, moving: h.moving,
-      swingT: h.swingT, swingDur: h.swingMax, swingAngle: h.swingAngle, swingDir: h.swingDir, aim: h.aim,
-      swordTier: this.swordTier, styleId: this.swordStyleId, time: this.floorPhase,
-      invuln: h.invuln, shield: h.shieldT > 0, faceDir: h.faceDir,
-    })
-    ctx.restore()
+    this.drawShadow(h.x, h.y + 22, 17)
+    if (this.ready(this.heroImg)) {
+      // painted hero sprite
+      const bob = h.moving ? Math.abs(Math.sin(h.walkPhase)) * 2.5 : Math.sin(this.floorPhase * 2) * 1
+      const flick = h.invuln > 0 && h.shieldT <= 0 && Math.floor(h.invuln * 20) % 2 === 0
+      if (flick) ctx.globalAlpha = 0.5
+      this.blit(this.heroImg, h.x, h.y + 28 - bob, 78, h.facing)
+      ctx.globalAlpha = 1
+      if (h.shieldT > 0) {
+        ctx.save()
+        ctx.globalAlpha = 0.4 + Math.sin(h.walkPhase * 2) * 0.1
+        const sg = ctx.createRadialGradient(h.x, h.y - 4, 8, h.x, h.y - 4, 34)
+        sg.addColorStop(0, 'rgba(120,255,190,0)')
+        sg.addColorStop(1, 'rgba(120,255,190,0.5)')
+        ctx.fillStyle = sg
+        ctx.beginPath(); ctx.arc(h.x, h.y - 4, 34, 0, Math.PI * 2); ctx.fill()
+        ctx.restore()
+      }
+    } else {
+      // vector fallback
+      ctx.save()
+      ctx.translate(h.x, h.y); ctx.scale(1.1, 1.1); ctx.translate(-h.x, -h.y)
+      drawKnight(ctx, {
+        x: h.x, y: h.y, facing: h.facing, walkPhase: h.walkPhase, moving: h.moving,
+        swingT: h.swingT, swingDur: h.swingMax, swingAngle: h.swingAngle, swingDir: h.swingDir, aim: h.aim,
+        swordTier: this.swordTier, styleId: this.swordStyleId, time: this.floorPhase,
+        invuln: h.invuln, shield: h.shieldT > 0, faceDir: h.faceDir,
+      })
+      ctx.restore()
+    }
   }
 
   // ---------- emit HUD ----------
