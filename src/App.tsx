@@ -109,9 +109,9 @@ function GameScreen({
         <div className="overlay">
           <div className="death-card">
             <h1>⏸ Paused</h1>
-            <p>Level <b>{hud.level}</b> · <b>{hud.kills}</b> kills</p>
+            <p>Level <b>{hud.level}</b> · <b>{hud.kills}</b> monsters beaten</p>
             <button className="play-btn" onClick={() => engineRef.current?.resume()}>▶ Resume</button>
-            <button className="exit-btn-inline" onClick={onExit}>Quit to Forge</button>
+            <button className="exit-btn-inline" onClick={onExit}>Quit to Menu</button>
           </div>
         </div>
       )}
@@ -119,11 +119,11 @@ function GameScreen({
       {hud?.status === 'dead' && (
         <div className="overlay">
           <div className="death-card">
-            <h1>☠️ You Fell</h1>
-            <p>Reached <b>Level {hud.level}</b> · <b>{hud.runKills}</b> kills</p>
-            <p className="essence-earned">🔮 +{hud.essenceEarned} Essence earned</p>
-            <p className="death-hint">Spend it in the Forge to sharpen your sword for the next descent.</p>
-            <button className="play-btn" onClick={onExit}>🔨 Return to Forge</button>
+            <h1>💀 Game Over</h1>
+            <p>You reached <b>Level {hud.level}</b> and beat <b>{hud.runKills}</b> monsters!</p>
+            <p className="essence-earned">🪙 +{hud.essenceEarned} coins earned</p>
+            <p className="death-hint">Spend your coins on upgrades to get further next time.</p>
+            <button className="play-btn" onClick={onExit}>🏠 Back to Menu</button>
           </div>
         </div>
       )}
