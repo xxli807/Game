@@ -427,13 +427,13 @@ export class GameEngine {
   private generateDecor() {
     this.decor = []
     const perType: Record<Biome, string[]> = {
-      dungeon: ['pillar', 'bones', 'rubble'],
+      dungeon: ['pillar', 'rubble'],
       forest: ['tree', 'tree', 'bush'],
       snow: ['pine', 'icerock'],
-      volcano: ['rock', 'rock', 'bones'],
+      volcano: ['rock', 'rock'],
     }
-    // sparse background scatter
-    for (let i = 0; i < 150; i++) {
+    // sparse background scatter (kept light so the map doesn't feel cluttered)
+    for (let i = 0; i < 85; i++) {
       const x = 30 + Math.random() * (WORLD_W - 60)
       const y = 30 + Math.random() * (WORLD_H - 60)
       const opts = perType[regionAt(x, y)]
@@ -1920,13 +1920,29 @@ export class GameEngine {
     }
   }
 
+  // cinematic lighting: a spotlight follows the hero, edges fall into shadow
   private drawVignette() {
     const ctx = this.ctx
-    const g = ctx.createRadialGradient(WIDTH / 2, HEIGHT / 2, 260, WIDTH / 2, HEIGHT / 2, 620)
+    const style = SWORD_STYLES[this.swordStyleId]
+    const hx = this.hero.x - this.cam.x
+    const hy = this.hero.y - this.cam.y
+    // shadow the periphery, keep the hero lit
+    const g = ctx.createRadialGradient(hx, hy, 170, hx, hy, 650)
     g.addColorStop(0, 'rgba(0,0,0,0)')
-    g.addColorStop(1, 'rgba(0,0,0,0.55)')
+    g.addColorStop(0.7, 'rgba(6,8,20,0.28)')
+    g.addColorStop(1, 'rgba(4,6,16,0.6)')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    // soft warm key-light on the hero, tinted by the sword element
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    const w = ctx.createRadialGradient(hx, hy, 20, hx, hy, 230)
+    w.addColorStop(0, style.glow)
+    w.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.globalAlpha = 0.14
+    ctx.fillStyle = w
+    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    ctx.restore()
   }
 
   private inView(x: number, y: number, pad: number): boolean {
@@ -2160,8 +2176,29 @@ export class GameEngine {
     const maxX = this.cam.x + WIDTH + 40
     const minY = this.cam.y - 40
     const maxY = this.cam.y + HEIGHT + 40
+    // light sources: colour + flicker per glowing prop type
+    const LIGHT: Record<string, { c: string; r: number }> = {
+      lava: { c: '255,120,40', r: 60 },
+      vent: { c: '255,120,40', r: 70 },
+      obelisk: { c: '140,160,255', r: 70 },
+      icespire: { c: '150,210,255', r: 55 },
+      statue: { c: '150,170,255', r: 45 },
+    }
     for (const d of this.decor) {
       if (d.x < minX || d.x > maxX || d.y < minY || d.y > maxY) continue
+      const light = LIGHT[d.type]
+      if (light) {
+        const flick = 0.7 + Math.sin(this.floorPhase * 6 + d.x) * 0.15
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        const r = light.r * d.s
+        const g = ctx.createRadialGradient(d.x, d.y - 4, 2, d.x, d.y - 4, r)
+        g.addColorStop(0, `rgba(${light.c},${0.5 * flick})`)
+        g.addColorStop(1, `rgba(${light.c},0)`)
+        ctx.fillStyle = g
+        ctx.beginPath(); ctx.arc(d.x, d.y - 4, r, 0, Math.PI * 2); ctx.fill()
+        ctx.restore()
+      }
       this.drawShadow(d.x, d.y + 6 * d.s, 12 * d.s)
       ctx.save()
       ctx.translate(d.x, d.y)
@@ -2268,13 +2305,40 @@ export class GameEngine {
   private drawHero() {
     const ctx = this.ctx
     const h = this.hero
-    this.drawShadow(h.x, h.y + 22, 16)
+    const style = SWORD_STYLES[this.swordStyleId]
+    // elemental ground glow beneath the hero (colour of the equipped sword)
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    const pulse = 0.55 + Math.sin(this.floorPhase * 3) * 0.12
+    const gg = ctx.createRadialGradient(h.x, h.y + 14, 4, h.x, h.y + 14, 52)
+    gg.addColorStop(0, style.glow)
+    gg.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.globalAlpha = pulse
+    ctx.fillStyle = gg
+    ctx.beginPath(); ctx.ellipse(h.x, h.y + 16, 46, 20, 0, 0, Math.PI * 2); ctx.fill()
+    // faint aura halo around the body
+    const ag = ctx.createRadialGradient(h.x, h.y - 8, 6, h.x, h.y - 8, 40)
+    ag.addColorStop(0, 'rgba(0,0,0,0)')
+    ag.addColorStop(0.6, 'rgba(0,0,0,0)')
+    ag.addColorStop(1, style.glow)
+    ctx.globalAlpha = 0.35 * pulse
+    ctx.fillStyle = ag
+    ctx.beginPath(); ctx.arc(h.x, h.y - 6, 40, 0, Math.PI * 2); ctx.fill()
+    ctx.restore()
+
+    this.drawShadow(h.x, h.y + 24, 19)
+    // draw the character a bit larger so it reads as the hero of the scene
+    ctx.save()
+    ctx.translate(h.x, h.y)
+    ctx.scale(1.35, 1.35)
+    ctx.translate(-h.x, -h.y)
     drawKnight(ctx, {
       x: h.x, y: h.y, facing: h.facing, walkPhase: h.walkPhase, moving: h.moving,
       swingT: h.swingT, swingDur: h.swingMax, swingAngle: h.swingAngle, swingDir: h.swingDir, aim: h.aim,
       swordTier: this.swordTier, styleId: this.swordStyleId, time: this.floorPhase,
       invuln: h.invuln, shield: h.shieldT > 0, faceDir: h.faceDir,
     })
+    ctx.restore()
   }
 
   // ---------- emit HUD ----------
