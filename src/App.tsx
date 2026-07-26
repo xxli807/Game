@@ -75,8 +75,16 @@ function GameScreen({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<GameEngine | null>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const endedRef = useRef(false)
   const [hud, setHud] = useState<HudState | null>(null)
+
+  const toggleFullscreen = () => {
+    const el = wrapRef.current
+    if (!el) return
+    if (document.fullscreenElement) document.exitFullscreen?.()
+    else el.requestFullscreen?.()
+  }
 
   useEffect(() => {
     if (!canvasRef.current) return
@@ -96,6 +104,7 @@ function GameScreen({
   }, [])
 
   return (
+    <div className="fs-wrap" ref={wrapRef}>
     <div className="game-frame">
       <canvas ref={canvasRef} width={WIDTH} height={HEIGHT} className="game-canvas" />
 
@@ -133,7 +142,9 @@ function GameScreen({
           {hud.status === 'paused' ? '▶' : '⏸'}
         </button>
       )}
+      <button className="fs-btn" onClick={toggleFullscreen} title="Fullscreen">⛶</button>
       <button className="exit-btn" onClick={onExit}>✕</button>
+    </div>
     </div>
   )
 }

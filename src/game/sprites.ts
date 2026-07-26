@@ -271,22 +271,55 @@ export function drawKnight(ctx: CanvasRenderingContext2D, o: KnightOpts) {
     ctx.restore()
   }
 
+  // Two-handed grip: both arms bend from the shoulders to meet on the hilt,
+  // like a real person actually holding and swinging the sword.
+  const ax = Math.cos(swordAngle)
+  const ay = Math.sin(swordAngle)
+  const gx = cx + ax * 12 // where the hands hold the handle
+  const gy = cy + ay * 12
+
+  const drawArm = (sx: number, sy: number, bend: number) => {
+    const dx = gx - sx
+    const dy = gy - sy
+    const len = Math.hypot(dx, dy) || 1
+    const nx = -dy / len
+    const ny = dx / len
+    const ex = (sx + gx) / 2 + nx * bend // elbow
+    const ey = (sy + gy) / 2 + ny * bend
+    ctx.lineCap = 'round'
+    // shoulder plate
+    ctx.fillStyle = '#9cc4ef'
+    ctx.beginPath(); ctx.arc(sx, sy, 4.5, 0, Math.PI * 2); ctx.fill()
+    // upper arm (armored)
+    ctx.strokeStyle = '#3f4a68'; ctx.lineWidth = 7
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke()
+    // forearm (skin)
+    ctx.strokeStyle = '#e6b68a'; ctx.lineWidth = 6
+    ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(gx, gy); ctx.stroke()
+    // elbow
+    ctx.fillStyle = '#33405e'; ctx.beginPath(); ctx.arc(ex, ey, 3.4, 0, Math.PI * 2); ctx.fill()
+  }
+  // back arm bends one way, lead arm the other, so both reach the grip
+  drawArm(cx - 8, cy - 5, 9)
+  drawArm(cx + 8, cy - 5, -9)
+
+  // hilt + hands, drawn along the sword's direction
   ctx.save()
   ctx.translate(cx, cy)
   ctx.rotate(swordAngle)
-  // forearm (skin) reaching out to grip
-  ctx.strokeStyle = '#e6b68a'; ctx.lineWidth = 5; ctx.lineCap = 'round'
-  ctx.beginPath(); ctx.moveTo(-2, 3); ctx.lineTo(9, 0); ctx.stroke()
-  // gauntlet hand
-  ctx.fillStyle = '#9fb0c6'
-  ctx.beginPath(); ctx.arc(9, 0, 3.2, 0, Math.PI * 2); ctx.fill()
-  // grip
+  // handle
   ctx.fillStyle = '#4a2f18'
-  rr(ctx, 9, -1.6, 7, 3.2, 1.5); ctx.fill()
+  rr(ctx, 7, -1.8, 11, 3.6, 1.6); ctx.fill()
+  // two gauntlet fists gripping (stacked along the handle)
+  ctx.fillStyle = '#aeb9cc'
+  rr(ctx, 8, -3.4, 4.5, 6.8, 2); ctx.fill()
+  rr(ctx, 13, -3.4, 4.5, 6.8, 2); ctx.fill()
+  ctx.strokeStyle = '#6b7891'; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(9, -2.5); ctx.lineTo(12, -2.5); ctx.moveTo(14, -2.5); ctx.lineTo(17, -2.5); ctx.stroke()
   // pommel + crossguard (gold)
   ctx.fillStyle = '#e6c15a'
-  ctx.beginPath(); ctx.arc(9, 0, 2.2, 0, Math.PI * 2); ctx.fill()
-  rr(ctx, 15, -5.5, 3.5, 11, 1.5); ctx.fill()
+  ctx.beginPath(); ctx.arc(6.5, 0, 2.4, 0, Math.PI * 2); ctx.fill()
+  rr(ctx, 18, -6, 3.5, 12, 1.5); ctx.fill()
   // blade — style-specific animated look
   drawBlade(ctx, style, geo, o.time)
   ctx.restore()

@@ -31,6 +31,13 @@ body {
 }
 
 /* ---------------- Game frame ---------------- */
+.fs-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
 .game-frame {
   position: relative;
   width: min(97vw, 960px);
@@ -38,6 +45,22 @@ body {
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 4px var(--gold-dark);
+}
+
+/* fullscreen: fill the screen (letterboxed) on a black backdrop */
+.fs-wrap:fullscreen,
+.fs-wrap:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+}
+.fs-wrap:fullscreen .game-frame,
+.fs-wrap:-webkit-full-screen .game-frame {
+  width: min(100vw, 150vh);
+  height: auto;
+  max-width: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .game-canvas {
@@ -78,6 +101,22 @@ body {
   z-index: 5;
 }
 .pause-btn:active { transform: scale(0.92); }
+
+.fs-btn {
+  position: absolute;
+  top: 8px;
+  right: 82px;
+  width: 34px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  z-index: 5;
+}
+.fs-btn:active { transform: scale(0.92); }
 
 .exit-btn-inline {
   display: block;
