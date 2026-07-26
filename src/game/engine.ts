@@ -1173,14 +1173,20 @@ export class GameEngine {
       }
     }
 
-    // body faces the way it walks; when standing still it faces the cursor
-    const [fdx, fdy] = h.moving ? [mvx, mvy] : [Math.cos(h.aim), Math.sin(h.aim)]
-    if (Math.abs(fdx) > Math.abs(fdy)) {
-      h.faceDir = fdx < 0 ? 'left' : 'right'
-      h.facing = fdx < 0 ? -1 : 1
+    // face the way we walk; when standing still, turn toward the enemies we fight
+    let fdx: number
+    let fdy: number
+    if (h.moving) {
+      fdx = mvx; fdy = mvy
     } else {
-      h.faceDir = fdy < 0 ? 'up' : 'down'
+      const foe = this.nearestEnemy(520)
+      if (foe) { fdx = foe.x - h.x; fdy = foe.y - h.y }
+      else { fdx = Math.cos(h.aim); fdy = Math.sin(h.aim) }
     }
+    // flip left/right whenever there's a clear horizontal component
+    if (Math.abs(fdx) > 0.001) h.facing = fdx < 0 ? -1 : 1
+    if (Math.abs(fdx) >= Math.abs(fdy)) h.faceDir = fdx < 0 ? 'left' : 'right'
+    else h.faceDir = fdy < 0 ? 'up' : 'down'
 
     // stride animation
     if (h.moving) h.walkPhase += dt * 12
@@ -2405,11 +2411,24 @@ export class GameEngine {
 
     this.drawShadow(h.x, h.y + 22, 17)
     if (this.ready(this.heroImg)) {
-      // painted hero sprite
+      const img = this.heroImg
       const bob = h.moving ? Math.abs(Math.sin(h.walkPhase)) * 2.5 : Math.sin(this.floorPhase * 2) * 1
       const flick = h.invuln > 0 && h.shieldT <= 0 && Math.floor(h.invuln * 20) % 2 === 0
+      // swing animation: rotate the whole knight so the sword winds up and slashes
+      const st = h.swingT > 0 ? 1 - h.swingT / h.swingMax : 0
+      const swing = h.swingT > 0 ? Math.sin(st * Math.PI) : 0 // 0 → 1 → 0
+      const rot = swing * 0.55 * h.swingDir
+      const targetH = 80
+      const w = targetH * (img.naturalWidth / img.naturalHeight)
+      const feetY = h.y + 28 - bob
+      const pivotY = feetY - targetH * 0.6 // rotate around the chest/hands
+      ctx.save()
       if (flick) ctx.globalAlpha = 0.5
-      this.blit(this.heroImg, h.x, h.y + 28 - bob, 78, h.facing)
+      ctx.translate(h.x, pivotY)
+      ctx.rotate(rot)
+      ctx.scale(h.facing, 1)
+      ctx.drawImage(img, -w / 2, feetY - targetH - pivotY, w, targetH)
+      ctx.restore()
       ctx.globalAlpha = 1
       if (h.shieldT > 0) {
         ctx.save()
