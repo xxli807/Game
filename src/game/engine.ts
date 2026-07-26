@@ -2326,11 +2326,11 @@ export class GameEngine {
     ctx.beginPath(); ctx.arc(h.x, h.y - 6, 40, 0, Math.PI * 2); ctx.fill()
     ctx.restore()
 
-    this.drawShadow(h.x, h.y + 24, 19)
-    // draw the character a bit larger so it reads as the hero of the scene
+    this.drawShadow(h.x, h.y + 22, 16)
+    // draw the character slightly larger so it reads as the hero of the scene
     ctx.save()
     ctx.translate(h.x, h.y)
-    ctx.scale(1.35, 1.35)
+    ctx.scale(1.1, 1.1)
     ctx.translate(-h.x, -h.y)
     drawKnight(ctx, {
       x: h.x, y: h.y, facing: h.facing, walkPhase: h.walkPhase, moving: h.moving,
