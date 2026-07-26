@@ -280,6 +280,9 @@ export class GameEngine {
   private readonly MAX_ENEMIES = 140
   private cam: Vec = { x: 0, y: 0 }
 
+  // painted ground textures per biome (loaded from public/arts)
+  private tileImgs: Partial<Record<Biome, HTMLImageElement>> = {}
+
   // ---- designed world landmarks ----
   private readonly plaza = { x: WORLD_W / 2, y: WORLD_H / 2, r: 210 }
   private readonly river = { y: WORLD_H / 2, half: 78 } // east-west, splits top/bottom
@@ -316,9 +319,20 @@ export class GameEngine {
     this.ctx = canvas.getContext('2d')!
     this.opts = opts
     this.stats = opts.stats
+    this.loadArt()
     this.bindInput()
     this.reset()
     this.loop(performance.now())
+  }
+
+  private loadArt() {
+    const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/'
+    const biomes: Biome[] = ['dungeon', 'forest', 'snow', 'volcano']
+    for (const b of biomes) {
+      const img = new Image()
+      img.src = `${base}arts/tile_${b}.png`
+      this.tileImgs[b] = img
+    }
   }
 
   // ---------- lifecycle ----------
@@ -1961,16 +1975,24 @@ export class GameEngine {
     for (let gy = y0; gy < y1; gy += step) {
       for (let gx = x0; gx < x1; gx += step) {
         const biome = regionAt(gx + 1, gy + 1)
-        const pal = BIOMES[biome]
         const seed = ((gx * 73856093) ^ (gy * 19349663)) >>> 0
-        // subtle organic mottling instead of a hard checkerboard
-        ctx.fillStyle = (seed % 2 === 0) ? pal.floorA : pal.floorB
-        ctx.fillRect(gx, gy, step, step)
-        const shade = ((seed >>> 3) % 100) / 100
-        ctx.fillStyle = shade > 0.5 ? `rgba(255,255,255,${(shade - 0.5) * 0.12})` : `rgba(0,0,0,${(0.5 - shade) * 0.18})`
-        ctx.fillRect(gx, gy, step, step)
-        if (biome === 'dungeon') { ctx.strokeStyle = pal.grout; ctx.lineWidth = 2; ctx.strokeRect(gx, gy, step, step) }
-        this.decorateTile(biome, gx, gy, step)
+        const img = this.tileImgs[biome]
+        if (img && img.complete && img.naturalWidth > 0) {
+          // painted texture; mirror some cells to hide the repeat
+          const fx = seed & 1 ? -1 : 1
+          const fy = seed & 2 ? -1 : 1
+          ctx.save()
+          ctx.translate(gx + step / 2, gy + step / 2)
+          ctx.scale(fx, fy)
+          ctx.drawImage(img, -step / 2 - 0.5, -step / 2 - 0.5, step + 1, step + 1)
+          ctx.restore()
+        } else {
+          // vector fallback until the texture loads
+          const pal = BIOMES[biome]
+          ctx.fillStyle = (seed % 2 === 0) ? pal.floorA : pal.floorB
+          ctx.fillRect(gx, gy, step, step)
+          this.decorateTile(biome, gx, gy, step)
+        }
       }
     }
 
