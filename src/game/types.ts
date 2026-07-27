@@ -223,6 +223,17 @@ export interface LegacyCard {
   apply: (s: Stats) => void
 }
 
+export const CARD_POOL: LegacyCard[] = [
+  { id: 'power', name: 'Brutal Power', icon: '⚔️', desc: '+4 sword damage.', rarity: 'common', apply: (s) => { s.swordDamage += 4 } },
+  { id: 'haste', name: 'Battle Haste', icon: '💨', desc: '+12% sword attack speed.', rarity: 'common', apply: (s) => { s.attackInterval = Math.max(0.16, s.attackInterval * 0.88) } },
+  { id: 'vitality', name: 'Vitality', icon: '❤️', desc: '+35 maximum health.', rarity: 'common', apply: (s) => { s.maxHp += 35 } },
+  { id: 'regeneration', name: 'Regeneration', icon: '💚', desc: '+1.5 health regeneration per second.', rarity: 'common', apply: (s) => { s.hpRegen += 1.5 } },
+  { id: 'focus', name: 'Arcane Focus', icon: '🔵', desc: '+20 mana and +2 mana regeneration.', rarity: 'common', apply: (s) => { s.maxMana += 20; s.manaRegen += 2 } },
+  { id: 'swiftness', name: 'Swiftness', icon: '👟', desc: '+10% movement speed.', rarity: 'common', apply: (s) => { s.moveSpeed *= 1.1 } },
+  { id: 'precision', name: 'Precision', icon: '🎯', desc: '+8% critical chance.', rarity: 'rare', apply: (s) => { s.crit = Math.min(0.75, s.crit + 0.08) } },
+  { id: 'magnetism', name: 'Magnetism', icon: '🧲', desc: '+35% pickup radius.', rarity: 'common', apply: (s) => { s.pickupRadius *= 1.35 } },
+]
+
 // ---------- Live snapshot for the React HUD ----------
 export type GameStatus = 'menu' | 'playing' | 'levelup' | 'paused' | 'dead'
 
@@ -259,14 +270,16 @@ export interface HudState {
   gold: number
   wave: number
   kills: number
+  swordLvl: number
   swordTier: number
   swordStyleName: string
   swordStyleIcon: string
   biome: string
   abilities: AbilityView[]
-  skills: OwnedSkill[]
+  weapons: { icon: string; level: number }[]
   cards: DraftChoice[]
   // filled on death
   runWave: number
   runKills: number
+  essenceEarned: number
 }

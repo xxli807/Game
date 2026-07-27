@@ -288,10 +288,12 @@ export class GameEngine {
   private heroImg?: HTMLImageElement
   private heroDir: Partial<Record<'up' | 'down' | 'side', HTMLImageElement>> = {}
   private heroAtk: HTMLImageElement[] = []
+  private heroTurn: HTMLImageElement[] = []
   private heroWalkDown: HTMLImageElement[] = []
   private heroWalkSide: HTMLImageElement[] = []
   private heroWalkUp: HTMLImageElement[] = []
   private enemyImgs: Partial<Record<EnemyKind, HTMLImageElement>> = {}
+  private cinderMawRun: HTMLImageElement[] = []
 
   // ---- designed world landmarks ----
   private readonly plaza = { x: WORLD_W / 2, y: WORLD_H / 2, r: 210 }
@@ -323,6 +325,10 @@ export class GameEngine {
   private rafId = 0
   private shakeAmt = 0
   private floorPhase = 0
+  private heroTurnT = 0
+  private heroTurnFrom = 0
+  private heroTurnTo = 0
+  private readonly HERO_TURN_DURATION = 0.2
 
   constructor(canvas: HTMLCanvasElement, opts: Opts) {
     this.canvas = canvas
@@ -340,16 +346,26 @@ export class GameEngine {
     const load = (file: string) => { const i = new Image(); i.src = `${base}arts/${file}.png`; return i }
     const biomes: Biome[] = ['dungeon', 'forest', 'snow', 'volcano']
     for (const b of biomes) this.tileImgs[b] = load(`tile_${b}`)
-    this.heroImg = load('hero')
-    this.heroDir = { down: load('hero_down'), up: load('hero_up'), side: load('hero_side') }
-    this.heroAtk = [load('hero_attack1'), load('hero_attack2'), load('hero_attack3')]
-    this.heroWalkDown = [1, 2, 3, 4].map((n) => load(`hero_walk_down_${n}`))
-    this.heroWalkSide = [1, 2, 3, 4].map((n) => load(`hero_walk_side_${n}`))
-    this.heroWalkUp = [1, 2, 3, 4].map((n) => load(`hero_walk_up_${n}`))
+    this.heroImg = load('hero_ashen_turn_1')
+    this.heroDir = {
+      down: load('hero_ashen_turn_1'),
+      up: load('hero_ashen_turn_4'),
+      side: load('hero_ashen_turn_3'),
+    }
+    this.heroTurn = Array.from({ length: 4 }, (_, index) => load(`hero_ashen_turn_${index + 1}`))
+    this.heroAtk = Array.from({ length: 6 }, (_, index) => load(`hero_ashen_attack_${index + 1}`))
+    this.heroWalkDown = []
+    this.heroWalkSide = []
+    this.heroWalkUp = []
     const enemyFile: Record<EnemyKind, string> = {
-      grunt: 'enemy_goblin', fast: 'enemy_bat', tank: 'enemy_brute', ranged: 'enemy_caster', boss: 'boss_dragon',
+      grunt: 'enemy_goblin',
+      fast: 'enemy_cinder_maw',
+      tank: 'enemy_ironroot_colossus',
+      ranged: 'enemy_mire_oracle',
+      boss: 'boss_dragon',
     }
     for (const k of Object.keys(enemyFile) as EnemyKind[]) this.enemyImgs[k] = load(enemyFile[k])
+    this.cinderMawRun = Array.from({ length: 8 }, (_, n) => load(`enemy_cinder_maw_run_${n + 1}`))
   }
 
   private ready(img?: HTMLImageElement): img is HTMLImageElement {
@@ -417,6 +433,9 @@ export class GameEngine {
     const starters: SkillId[] = ['fireball', 'dash', 'whirlwind']
     this.skills.push({ id: starters[Math.floor(Math.random() * starters.length)], level: 1 })
     this.recomputeStats()
+    this.heroTurnT = 0
+    this.heroTurnFrom = 0
+    this.heroTurnTo = 0
     this.gold = 0
     this.freezeT = 0
     this.flash = 0
@@ -1418,6 +1437,7 @@ export class GameEngine {
     }
     h.invuln = Math.max(0, h.invuln - dt)
     h.shieldT = Math.max(0, h.shieldT - dt)
+    this.heroTurnT = Math.max(0, this.heroTurnT - dt)
     if (h.swingT > 0) h.swingT -= dt
 
     // aim toward the cursor (drives the sword, not necessarily the body)
@@ -1475,8 +1495,15 @@ export class GameEngine {
     }
     // flip left/right whenever there's a clear horizontal component
     if (Math.abs(fdx) > 0.001) h.facing = fdx < 0 ? -1 : 1
-    if (Math.abs(fdx) >= Math.abs(fdy)) h.faceDir = fdx < 0 ? 'left' : 'right'
-    else h.faceDir = fdy < 0 ? 'up' : 'down'
+    const nextFaceDir: Hero['faceDir'] = Math.abs(fdx) >= Math.abs(fdy)
+      ? (fdx < 0 ? 'left' : 'right')
+      : (fdy < 0 ? 'up' : 'down')
+    if (nextFaceDir !== h.faceDir) {
+      this.heroTurnFrom = this.faceFrameIndex(h.faceDir)
+      this.heroTurnTo = this.faceFrameIndex(nextFaceDir)
+      this.heroTurnT = this.HERO_TURN_DURATION
+      h.faceDir = nextFaceDir
+    }
 
     // stride animation
     if (h.moving) h.walkPhase += dt * 10
@@ -1580,6 +1607,12 @@ export class GameEngine {
     if (h.hp <= 0) this.endRun()
 
     this.emit()
+  }
+
+  private faceFrameIndex(direction: Hero['faceDir']): number {
+    if (direction === 'down') return 0
+    if (direction === 'up') return 3
+    return 2
   }
 
   private swordSwing(target: Enemy | null) {
@@ -2621,7 +2654,10 @@ export class GameEngine {
 
   private drawEnemy(e: Enemy) {
     const ctx = this.ctx
-    const img = this.enemyImgs[e.kind]
+    let img = this.enemyImgs[e.kind]
+    if (e.kind === 'fast' && this.cinderMawRun.every((frame) => this.ready(frame))) {
+      img = this.cinderMawRun[Math.floor(e.phase * 1.75) % this.cinderMawRun.length]
+    }
     // elite aura
     if (e.elite) {
       ctx.save()
@@ -2707,15 +2743,22 @@ export class GameEngine {
 
       // Pick the sprite: front/side attack frames while slashing, else directional idle.
       const frames = this.heroAtk
-      const framesReady = frames.length === 3 && frames.every((a) => this.ready(a))
+      const framesReady = frames.length === 6 && frames.every((frame) => this.ready(frame))
+      const turnFramesReady = this.heroTurn.length === 4 && this.heroTurn.every((frame) => this.ready(frame))
       let img: HTMLImageElement | undefined = this.heroImg
       let useFrames = false
       if (swinging && framesReady && h.faceDir !== 'up') {
-        img = frames[st < 0.34 ? 0 : st < 0.7 ? 1 : 2] // wind-up → slash → follow-through (front/side only)
+        img = frames[Math.min(frames.length - 1, Math.floor(st * frames.length))]
         useFrames = true
+      } else if (this.heroTurnT > 0 && turnFramesReady) {
+        const progress = 1 - this.heroTurnT / this.HERO_TURN_DURATION
+        const frameIndex = Math.round(this.heroTurnFrom + (this.heroTurnTo - this.heroTurnFrom) * progress)
+        img = this.heroTurn[Math.max(0, Math.min(this.heroTurn.length - 1, frameIndex))]
       } else {
-        // Directional idle: front / back / side. (Back swings via rotation since the frames are front-view.)
-        const key = h.faceDir === 'left' || h.faceDir === 'right' ? 'side' : h.faceDir === 'up' ? 'up' : 'down'
+        // Use the generated front, side, and back views for directional readability.
+        const key = h.faceDir === 'left' || h.faceDir === 'right'
+          ? 'side'
+          : h.faceDir === 'up' ? 'up' : 'down'
         const dir = this.heroDir[key]
         if (this.ready(dir)) img = dir
       }

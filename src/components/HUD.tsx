@@ -1,4 +1,4 @@
-import { HudState, SKILLS } from '../game/types'
+import { HudState } from '../game/types'
 
 export default function HUD({ state, onAbility }: { state: HudState; onAbility: (key: string) => void }) {
   const hpPct = (state.hp / state.maxHp) * 100
@@ -26,12 +26,11 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
           <Bar className="mp" pct={mpPct} label={`🔵 ${state.mana}/${state.maxMana}`} />
         </div>
         <div className="weapons">
-          {state.skills.map((skill) => {
-            const definition = SKILLS[skill.id]
+          {state.weapons.map((weapon, index) => {
             return (
-            <div key={skill.id} className="weapon-chip" title={`${definition.name} · ${definition.kind} · Level ${skill.level}`}>
-              <span className="weapon-icon">{definition.icon}</span>
-              <span className="weapon-lvl">{skill.level}</span>
+            <div key={`${weapon.icon}-${index}`} className="weapon-chip" title={`Auto-weapon level ${weapon.level}`}>
+              <span className="weapon-icon">{weapon.icon}</span>
+              <span className="weapon-lvl">{weapon.level}</span>
             </div>
             )
           })}

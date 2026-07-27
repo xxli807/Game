@@ -62,6 +62,7 @@ function GameScreen({
     if (!canvasRef.current) return
     const engine = new GameEngine(canvasRef.current, {
       stats: baseStats(),
+      swordLvl: 1,
       onState: setHud,
       onRunEnd: (r) => {
         if (endedRef.current) return
