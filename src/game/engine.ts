@@ -286,6 +286,8 @@ export class GameEngine {
   private heroImg?: HTMLImageElement
   private heroDir: Partial<Record<'up' | 'down' | 'side', HTMLImageElement>> = {}
   private heroAtk: HTMLImageElement[] = []
+  private heroWalkDown: HTMLImageElement[] = []
+  private heroWalkSide: HTMLImageElement[] = []
   private enemyImgs: Partial<Record<EnemyKind, HTMLImageElement>> = {}
 
   // ---- designed world landmarks ----
@@ -338,6 +340,8 @@ export class GameEngine {
     this.heroImg = load('hero')
     this.heroDir = { down: load('hero_down'), up: load('hero_up'), side: load('hero_side') }
     this.heroAtk = [load('hero_attack1'), load('hero_attack2'), load('hero_attack3')]
+    this.heroWalkDown = [1, 2, 3, 4].map((n) => load(`hero_walk_down_${n}`))
+    this.heroWalkSide = [1, 2, 3, 4].map((n) => load(`hero_walk_side_${n}`))
     const enemyFile: Record<EnemyKind, string> = {
       grunt: 'enemy_goblin', fast: 'enemy_bat', tank: 'enemy_brute', ranged: 'enemy_caster', boss: 'boss_dragon',
     }
@@ -2435,16 +2439,26 @@ export class GameEngine {
         if (this.ready(dir)) img = dir
       }
 
-      // Weight-shifting walk cycle (idle directional sprite only; attack frames animate themselves).
+      // Walk cycle. Prefer real 4-frame walk art; otherwise fall back to a procedural body rock.
       const walking = h.moving && !useFrames
       const wp = h.walkPhase
-      const shift = walking ? Math.sin(wp) : 0             // -1..1: weight rocks side to side each step
-      const bounce = walking ? Math.abs(Math.sin(wp)) : 0  // 0 at footfall, 1 mid-stride
+      let useWalkFrames = false
+      if (walking) {
+        const set = h.faceDir === 'left' || h.faceDir === 'right' ? this.heroWalkSide : this.heroWalkDown
+        if (set.length === 4 && set.every((a) => this.ready(a))) {
+          img = set[Math.floor(wp / (Math.PI / 2)) % 4] // contact → passing → contact → passing
+          useWalkFrames = true
+        }
+      }
+      // Procedural weight-shift only when walking without frame art (frames carry their own motion).
+      const rock = walking && !useWalkFrames
+      const shift = rock ? Math.sin(wp) : 0                // -1..1: weight rocks side to side each step
+      const bounce = rock ? Math.abs(Math.sin(wp)) : 0     // 0 at footfall, 1 mid-stride
       const lean = shift * 0.11                             // body leans ~6° toward the planted foot
       const swayX = shift * 2.4                             // hips drift toward the planted foot
       const sqX = 1 + (1 - bounce) * 0.05                   // squash & stretch: widen and settle on footfall
       const sqY = 1 - (1 - bounce) * 0.07
-      const bob = walking
+      const bob = rock
         ? bounce * 3.6                                      // body rises between footfalls, plants down on each step
         : (h.moving ? 0 : Math.sin(this.floorPhase * 2) * 1) // gentle breathing while standing still
 
