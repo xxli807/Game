@@ -1,11 +1,16 @@
 import {
   Stats,
-  CARD_POOL,
   HudState,
   GameStatus,
   AbilityView,
   DraftChoice,
   Rarity,
+  SkillId,
+  OwnedSkill,
+  SKILLS,
+  SKILL_SYNERGIES,
+  BASE_SKILL_IDS,
+  xpRequiredForLevel,
 } from './types'
 import {
   Biome,
@@ -195,14 +200,28 @@ interface Meteor {
 interface RunEnd {
   wave: number
   kills: number
-  essence: number
 }
 
 interface Opts {
   stats: Stats
-  swordLvl: number
   onState: (s: HudState) => void
   onRunEnd: (r: RunEnd) => void
+}
+
+// Ability-bar slots, in the order owned active skills fill them.
+const ABILITY_KEYS = ['Q', 'E', 'SPC', 'R', 'F'] as const
+// Cooldown (s) / mana for active skills that aren't backed by Stats fields.
+const ACTIVE_CFG: Partial<Record<SkillId, { cd: number; mana: number }>> = {
+  'frost-nova': { cd: 7, mana: 30 },
+  'chain-lightning': { cd: 5, mana: 25 },
+  'blade-storm': { cd: 6, mana: 30 },
+  'holy-beam': { cd: 4, mana: 22 },
+  'time-warp': { cd: 18, mana: 55 },
+  inferno: { cd: 8, mana: 45 },
+  'blade-dancer': { cd: 7, mana: 40 },
+  'guardian-angel': { cd: 16, mana: 55 },
+  'absolute-zero': { cd: 20, mana: 55 },
+  tempest: { cd: 12, mana: 50 },
 }
 
 const KIND_EMOJI: Record<EnemyKind, string> = {
@@ -214,27 +233,8 @@ const KIND_EMOJI: Record<EnemyKind, string> = {
 }
 
 // ---------- Auto-weapons (collected & levelled through the draft) ----------
+// Ambient auto-weapon runtime (kept for the orbiting-blade visuals); no longer drafted.
 type WeaponId = 'orbit' | 'wand' | 'aura' | 'axe' | 'lightning'
-
-interface WeaponMeta {
-  id: WeaponId
-  name: string
-  icon: string
-  max: number
-  rarity: Rarity
-  blurb: string
-}
-
-const WEAPONS: Record<WeaponId, WeaponMeta> = {
-  orbit: { id: 'orbit', name: 'Spirit Blades', icon: '🗡️', max: 6, rarity: 'rare', blurb: 'Blades orbit you, shredding all they touch' },
-  wand: { id: 'wand', name: 'Magic Wand', icon: '✨', max: 6, rarity: 'common', blurb: 'Auto-fires homing bolts at the nearest foe' },
-  aura: { id: 'aura', name: 'Frost Aura', icon: '❄️', max: 5, rarity: 'rare', blurb: 'Pulses cold damage & slows nearby enemies' },
-  axe: { id: 'axe', name: 'War Axes', icon: '🪓', max: 6, rarity: 'common', blurb: 'Hurls spinning axes that pierce the horde' },
-  lightning: { id: 'lightning', name: 'Storm Call', icon: '⚡', max: 5, rarity: 'epic', blurb: 'Lightning zaps and chains between foes' },
-}
-const WEAPON_IDS = Object.keys(WEAPONS) as WeaponId[]
-const MAX_WEAPONS = 5
-
 interface OwnedWeapon { id: WeaponId; level: number; timer: number }
 interface Bolt { x1: number; y1: number; x2: number; y2: number; life: number }
 interface LevelOpt { choice: DraftChoice; apply: () => void; weight: number }
@@ -264,6 +264,8 @@ export class GameEngine {
   private bossTimer = 45
   private swingFlip = 1
   private weapons: OwnedWeapon[] = []
+  private skills: OwnedSkill[] = []
+  private skillCd: Partial<Record<SkillId, number>> = {}
   private orbitAngle = 0
   private bolts: Bolt[] = []
   private choices: DraftChoice[] = []
@@ -391,7 +393,7 @@ export class GameEngine {
       invuln: 0,
       level: 1,
       xp: 0,
-      xpToNext: 16,
+      xpToNext: xpRequiredForLevel(1),
       walkPhase: 0,
       facing: 1,
       faceDir: 'down',
@@ -408,8 +410,13 @@ export class GameEngine {
     this.pickups = []
     this.bolts = []
     this.orbitAngle = 0
-    // begin every run with one random auto-weapon so it's lively from the start
-    this.weapons = [{ id: WEAPON_IDS[Math.floor(Math.random() * WEAPON_IDS.length)], level: 1, timer: 0 }]
+    this.weapons = []
+    // begin every run with one random active skill so the ability bar is lively from the start
+    this.skills = []
+    this.skillCd = {}
+    const starters: SkillId[] = ['fireball', 'dash', 'whirlwind']
+    this.skills.push({ id: starters[Math.floor(Math.random() * starters.length)], level: 1 })
+    this.recomputeStats()
     this.gold = 0
     this.freezeT = 0
     this.flash = 0
@@ -619,11 +626,15 @@ export class GameEngine {
     } else {
       this.mouse = { x: h.x + Math.cos(h.aim) * 300, y: h.y + Math.sin(h.aim) * 300 }
     }
-    if (key === 'Q') this.castDash()
-    else if (key === 'SPC') this.castWhirl()
-    else if (key === 'E') this.castFire()
-    else if (key === 'R') this.castUlt()
-    else if (key === 'F') this.castHeal()
+    this.castKey(key)
+  }
+
+  /** Activate whichever owned active skill sits in the given ability slot. */
+  private castKey(key: string) {
+    const idx = ABILITY_KEYS.indexOf(key as (typeof ABILITY_KEYS)[number])
+    if (idx < 0) return
+    const os = this.activeSkills()[idx]
+    if (os) this.activateSkill(os)
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -631,11 +642,11 @@ export class GameEngine {
     this.keys.add(k)
     if (k === 'p' || k === 'escape') { this.togglePause(); return }
     if (this.status !== 'playing') return
-    if (k === 'q') this.castDash()
-    if (k === 'e') this.castFire()
-    if (k === ' ') { this.castWhirl(); e.preventDefault() }
-    if (k === 'r') this.castUlt()
-    if (k === 'f') this.castHeal()
+    if (k === 'q') this.castKey('Q')
+    if (k === 'e') this.castKey('E')
+    if (k === ' ') { this.castKey('SPC'); e.preventDefault() }
+    if (k === 'r') this.castKey('R')
+    if (k === 'f') this.castKey('F')
   }
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.key.toLowerCase())
@@ -643,7 +654,7 @@ export class GameEngine {
 
   // enemy power grows with survival time, hero level, and sword level
   private scale(): number {
-    return 1 + (this.wave - 1) * 0.18 + (this.hero.level - 1) * 0.05 + (this.opts.swordLvl - 1) * 0.13
+    return 1 + (this.wave - 1) * 0.18 + (this.hero.level - 1) * 0.07
   }
 
   private spawnEnemy(force?: EnemyKind) {
@@ -804,6 +815,235 @@ export class GameEngine {
     h.shieldT = this.stats.shieldTime
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 60, life: 0.35, color: 'rgba(120,255,170,0.7)' })
     this.floatText(h.x, h.y - 34, `+${Math.round(this.stats.healAmount)}`, '#69db7c', 22)
+  }
+
+  // ---------- skill system ----------
+  private activeSkills(): OwnedSkill[] {
+    return this.skills.filter((os) => SKILLS[os.id].kind === 'active')
+  }
+
+  private activateSkill(os: OwnedSkill) {
+    if (this.status !== 'playing') return
+    switch (os.id) {
+      case 'dash': this.castDash(); break
+      case 'whirlwind': this.castWhirl(); break
+      case 'fireball': this.castFire(); break
+      case 'meteor': this.castUlt(); break
+      case 'heal': this.castHeal(); break
+      case 'frost-nova': this.castFrostNova(os.level); break
+      case 'chain-lightning': this.skillChainLightning(os.level); break
+      case 'blade-storm': this.castBladeStorm(os.level); break
+      case 'holy-beam': this.castHolyBeam(os.level); break
+      case 'time-warp': this.castTimeWarp(os.level); break
+      case 'inferno': this.castInferno(os.level); break
+      case 'blade-dancer': this.castBladeDancer(os.level); break
+      case 'guardian-angel': this.castGuardianAngel(os.level); break
+      case 'absolute-zero': this.castAbsoluteZero(os.level); break
+      case 'tempest': this.castTempest(os.level); break
+    }
+  }
+
+  /** Cooldown/mana gate for the actives not backed by Stats fields. */
+  private beginActive(id: SkillId): boolean {
+    if ((this.skillCd[id] ?? 0) > 0) return false
+    const cfg = ACTIVE_CFG[id]
+    if (!cfg) return false
+    if (!this.spendMana(cfg.mana)) return false
+    this.skillCd[id] = cfg.cd
+    return true
+  }
+
+  private cdInfo(os: OwnedSkill): { cdLeft: number; cdMax: number; manaCost: number } {
+    const h = this.hero, s = this.stats
+    switch (os.id) {
+      case 'dash': return { cdLeft: h.dashCd, cdMax: s.dashCd, manaCost: s.dashMana }
+      case 'whirlwind': return { cdLeft: h.whirlCd, cdMax: s.whirlCd, manaCost: s.whirlMana }
+      case 'fireball': return { cdLeft: h.fireCd, cdMax: s.fireCd, manaCost: s.fireMana }
+      case 'meteor': return { cdLeft: h.ultCd, cdMax: s.ultCd, manaCost: s.ultMana }
+      case 'heal': return { cdLeft: h.healCd, cdMax: s.healCd, manaCost: s.healMana }
+      default: {
+        const cfg = ACTIVE_CFG[os.id]
+        return { cdLeft: this.skillCd[os.id] ?? 0, cdMax: cfg?.cd ?? 0, manaCost: cfg?.mana ?? 0 }
+      }
+    }
+  }
+
+  /** Rebuild live Stats from the base loadout + every owned passive skill. */
+  private recomputeStats() {
+    const prevHp = this.stats.maxHp, prevMana = this.stats.maxMana
+    const s: Stats = { ...this.opts.stats }
+    for (const os of this.skills) {
+      if (SKILLS[os.id].kind === 'passive') this.applyPassive(s, os.id, os.level)
+    }
+    this.stats = s
+    if (this.hero) {
+      if (s.maxHp > prevHp) this.hero.hp = Math.min(s.maxHp, this.hero.hp + (s.maxHp - prevHp))
+      if (s.maxMana > prevMana) this.hero.mana = Math.min(s.maxMana, this.hero.mana + (s.maxMana - prevMana))
+    }
+  }
+
+  private applyPassive(s: Stats, id: SkillId, lvl: number) {
+    switch (id) {
+      case 'power': s.swordDamage *= 1 + 0.25 * lvl; break
+      case 'haste': s.attackInterval /= 1 + 0.15 * lvl; break
+      case 'vitality': s.maxHp += 45 * lvl; break
+      case 'regeneration': s.hpRegen += 3 * lvl; break
+      case 'focus': s.maxMana += 25 * lvl; s.manaRegen += 3 * lvl; break
+      case 'swiftness': s.moveSpeed *= 1 + 0.12 * lvl; break
+      case 'precision': s.crit += 0.1 * lvl; break
+      case 'vampirism': s.lifesteal += 0.05 * lvl; break
+      case 'magnetism': s.pickupRadius *= 1 + 0.5 * lvl; break
+      case 'thorns': s.thorns += 0.25 * lvl; break
+      default: break
+    }
+  }
+
+  // ---- extra active skill effects ----
+  private castFrostNova(lvl: number) {
+    if (!this.beginActive('frost-nova')) return
+    const h = this.hero
+    const R = 150 + lvl * 12, dmg = 26 + lvl * 12
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: R, life: 0.4, color: 'rgba(140,220,255,0.7)' })
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - h.x, e.y - h.y) < R + e.radius) {
+        this.damageEnemy(e, dmg, true)
+        e.slowT = Math.max(e.slowT, 2.5)
+      }
+    }
+    this.freezeT = Math.max(this.freezeT, 0.5)
+    this.floatText(h.x, h.y - 40, '❄️ FROST NOVA', '#8cd6ff', 22)
+    this.shake(6)
+  }
+
+  private chainZap(startX: number, startY: number, jumps: number, dmg: number, range: number, life: number) {
+    let fx = startX, fy = startY
+    const hit = new Set<Enemy>()
+    for (let i = 0; i < jumps; i++) {
+      let best: Enemy | null = null, bd = range * range
+      for (const e of this.enemies) {
+        if (hit.has(e)) continue
+        const d = (e.x - fx) ** 2 + (e.y - fy) ** 2
+        if (d < bd) { bd = d; best = e }
+      }
+      if (!best) break
+      this.bolts.push({ x1: fx, y1: fy, x2: best.x, y2: best.y, life })
+      this.damageEnemy(best, dmg, true)
+      hit.add(best); fx = best.x; fy = best.y
+    }
+  }
+
+  private skillChainLightning(lvl: number) {
+    if (!this.beginActive('chain-lightning')) return
+    this.chainZap(this.hero.x, this.hero.y, 3 + lvl, 24 + lvl * 10, 320, 0.18)
+    this.floatText(this.hero.x, this.hero.y - 40, '⚡ CHAIN LIGHTNING', '#ffe066', 20)
+  }
+
+  private castBladeStorm(lvl: number) {
+    if (!this.beginActive('blade-storm')) return
+    const h = this.hero
+    const n = 8 + lvl * 2, dmg = 20 + lvl * 8
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2
+      this.projectiles.push(this.mkProj(
+        h.x + Math.cos(a) * 20, h.y + Math.sin(a) * 20,
+        Math.cos(a) * 460, Math.sin(a) * 460, dmg, true,
+        { r: 8, life: 0.9, pierce: 3, spin: 18, color: '#e9d8ff' },
+      ))
+    }
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 70, life: 0.3, color: 'rgba(200,170,255,0.6)' })
+    this.floatText(h.x, h.y - 40, '🗡️ BLADE STORM', '#d0bcff', 22)
+  }
+
+  private castHolyBeam(lvl: number) {
+    if (!this.beginActive('holy-beam')) return
+    const h = this.hero
+    const t = this.nearestEnemy(700), dmg = 55 + lvl * 22
+    if (t) {
+      this.bolts.push({ x1: h.x, y1: h.y, x2: t.x, y2: t.y, life: 0.22 })
+      this.damageEnemy(t, dmg, true)
+      for (const e of this.enemies) {
+        if (e !== t && Math.hypot(e.x - t.x, e.y - t.y) < 60) this.damageEnemy(e, dmg * 0.5, true)
+      }
+      this.rings.push({ x: t.x, y: t.y, r: 6, maxR: 55, life: 0.3, color: 'rgba(255,240,170,0.8)' })
+    }
+    this.floatText(h.x, h.y - 40, '🌟 HOLY BEAM', '#ffe89e', 22)
+  }
+
+  private castTimeWarp(lvl: number) {
+    if (!this.beginActive('time-warp')) return
+    this.freezeT = Math.max(this.freezeT, 2.5 + lvl * 0.3)
+    this.projectiles = this.projectiles.filter((p) => p.friendly)
+    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: 240, life: 0.5, color: 'rgba(180,200,255,0.5)' })
+    this.floatText(this.hero.x, this.hero.y - 40, '⏳ TIME WARP', '#b0c4ff', 24)
+    this.shake(8)
+  }
+
+  private castInferno(lvl: number) {
+    if (!this.beginActive('inferno')) return
+    const h = this.hero, baseA = h.aim, n = 4 + lvl
+    for (let i = 0; i < n; i++) {
+      const a = baseA + (i - (n - 1) / 2) * 0.22
+      this.projectiles.push(this.mkProj(
+        h.x + Math.cos(a) * 24, h.y + Math.sin(a) * 24,
+        Math.cos(a) * 540, Math.sin(a) * 540, 40 + lvl * 12, true,
+        { r: 10, life: 1.4, radius: 62 },
+      ))
+    }
+    const cx = this.mouse.x, cy = this.mouse.y
+    for (let i = 0; i < 4 + lvl; i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 150
+      this.meteors.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, t: 0.3 + Math.random() * 0.8, damage: 70 + lvl * 20, radius: 74 })
+    }
+    this.floatText(h.x, h.y - 44, '🌋 INFERNO', '#ff6b3d', 26)
+    this.shake(10)
+  }
+
+  private castBladeDancer(lvl: number) {
+    if (!this.beginActive('blade-dancer')) return
+    const h = this.hero
+    h.dashT = 0.4; h.invuln = 0.7; h.dashDir = this.aimDir(); h.dashHits = new Set()
+    const R = 150
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - h.x, e.y - h.y) < R + e.radius) {
+        this.damageEnemy(e, 34 + lvl * 12, true)
+        const a = Math.atan2(e.y - h.y, e.x - h.x)
+        e.knock.x += Math.cos(a) * 300; e.knock.y += Math.sin(a) * 300
+      }
+    }
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: R, life: 0.4, color: 'rgba(255,220,120,0.6)' })
+    this.floatText(h.x, h.y - 44, '⚔️ BLADE DANCER', '#ffd866', 24)
+    this.shake(8)
+  }
+
+  private castGuardianAngel(lvl: number) {
+    if (!this.beginActive('guardian-angel')) return
+    const h = this.hero
+    h.hp = this.stats.maxHp
+    h.shieldT = 3 + lvl
+    h.invuln = Math.max(h.invuln, 0.5)
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 80, life: 0.5, color: 'rgba(150,255,190,0.7)' })
+    this.floatText(h.x, h.y - 44, '🪽 GUARDIAN ANGEL', '#b2f2bb', 24)
+  }
+
+  private castAbsoluteZero(lvl: number) {
+    if (!this.beginActive('absolute-zero')) return
+    const h = this.hero
+    this.freezeT = Math.max(this.freezeT, 3.5 + lvl * 0.4)
+    this.projectiles = this.projectiles.filter((p) => p.friendly)
+    const dmg = 60 + lvl * 25
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - h.x, e.y - h.y) < 520) { this.damageEnemy(e, dmg, true); e.slowT = Math.max(e.slowT, 4) }
+    }
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 520, life: 0.6, color: 'rgba(160,220,255,0.5)' })
+    this.floatText(h.x, h.y - 44, '🧊 ABSOLUTE ZERO', '#a5e8ff', 26)
+    this.shake(12)
+  }
+
+  private castTempest(lvl: number) {
+    if (!this.beginActive('tempest')) return
+    this.chainZap(this.hero.x, this.hero.y, 8 + lvl * 2, 45 + lvl * 18, 360, 0.2)
+    this.floatText(this.hero.x, this.hero.y - 44, '🌩️ TEMPEST', '#d0bfff', 26)
+    this.shake(10)
   }
 
   private mkProj(
@@ -1027,7 +1267,7 @@ export class GameEngine {
     const h = this.hero
     h.xp -= h.xpToNext
     h.level++
-    h.xpToNext = Math.round(9 + h.level * 7 + h.level * h.level * 0.55)
+    h.xpToNext = xpRequiredForLevel(h.level)
     h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.1)
     // every 5th level a big boss marches in
     if (h.level % 5 === 0) this.spawnMegaBoss()
@@ -1055,40 +1295,76 @@ export class GameEngine {
     for (const o of chosen) this.choiceActions[o.choice.id] = o.apply
   }
 
+  private readonly MAX_SKILLS = 5
+
+  private rarityWeight(r: Rarity): number {
+    return r === 'epic' ? 1.3 : r === 'rare' ? 2.4 : 4
+  }
+
+  private owned(id: SkillId): OwnedSkill | undefined {
+    return this.skills.find((os) => os.id === id)
+  }
+
   private levelUpOptions(): LevelOpt[] {
     const opts: LevelOpt[] = []
-    // upgrade weapons you own
-    for (const w of this.weapons) {
-      const m = WEAPONS[w.id]
-      if (w.level >= m.max) continue
+
+    // 1) Synergy evolutions — offered when you own BOTH ingredients and not the result yet.
+    for (const syn of SKILL_SYNERGIES) {
+      if (this.owned(syn.result)) continue
+      const [a, b] = syn.ingredients
+      if (!this.owned(a) || !this.owned(b)) continue
+      const def = SKILLS[syn.result]
       opts.push({
-        weight: m.rarity === 'epic' ? 3 : m.rarity === 'rare' ? 4 : 5,
-        choice: { id: `wup-${w.id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: `Lv ${w.level} → ${w.level + 1}` },
-        apply: () => { w.level++ },
+        weight: 9, // strongly surface evolutions
+        choice: {
+          id: `syn-${syn.result}`, name: def.name, icon: def.icon,
+          desc: def.description, rarity: def.rarity, tag: '✨ EVOLVE',
+        },
+        apply: () => {
+          this.skills = this.skills.filter((os) => os.id !== a && os.id !== b)
+          this.skills.push({ id: syn.result, level: 1 })
+          this.recomputeStats()
+        },
       })
     }
-    // brand-new weapons (free slot)
-    if (this.weapons.length < MAX_WEAPONS) {
-      for (const id of WEAPON_IDS) {
-        if (this.weapons.some((w) => w.id === id)) continue
-        const m = WEAPONS[id]
+
+    // 2) Upgrade a skill you already own (below its max level).
+    for (const os of this.skills) {
+      const def = SKILLS[os.id]
+      if (os.level >= def.maxLevel) continue
+      opts.push({
+        weight: this.rarityWeight(def.rarity) + 1.5,
+        choice: {
+          id: `up-${os.id}`, name: def.name, icon: def.icon,
+          desc: def.description, rarity: def.rarity, tag: `Lv ${os.level} → ${os.level + 1}`,
+        },
+        apply: () => { os.level++; if (def.kind === 'passive') this.recomputeStats() },
+      })
+    }
+
+    // 3) Brand-new base skills (only while a slot is free).
+    if (this.skills.length < this.MAX_SKILLS) {
+      for (const id of BASE_SKILL_IDS) {
+        if (this.owned(id)) continue
+        const def = SKILLS[id]
         opts.push({
-          weight: m.rarity === 'epic' ? 2.5 : m.rarity === 'rare' ? 3.5 : 4.5,
-          choice: { id: `wnew-${id}`, name: m.name, icon: m.icon, desc: m.blurb, rarity: m.rarity, tag: '★ NEW WEAPON' },
-          apply: () => { this.weapons.push({ id, level: 1, timer: 0 }) },
+          weight: this.rarityWeight(def.rarity),
+          choice: {
+            id: `new-${id}`, name: def.name, icon: def.icon,
+            desc: def.description, rarity: def.rarity,
+            tag: def.kind === 'active' ? '★ NEW SKILL' : '★ NEW PASSIVE',
+          },
+          apply: () => { this.skills.push({ id, level: 1 }); if (def.kind === 'passive') this.recomputeStats() },
         })
       }
     }
-    // stat / ability cards
-    for (const c of CARD_POOL) {
+
+    // Fallback: if every slot is full & maxed, offer a small heal-up so the draft is never empty.
+    if (opts.length === 0) {
       opts.push({
-        weight: c.rarity === 'common' ? 4 : c.rarity === 'rare' ? 2.2 : 1.1,
-        choice: { id: c.id, name: c.name, icon: c.icon, desc: c.desc, rarity: c.rarity },
-        apply: () => {
-          const before = this.stats.maxHp
-          c.apply(this.stats)
-          this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + Math.max(0, this.stats.maxHp - before))
-        },
+        weight: 1,
+        choice: { id: 'fallback-heal', name: 'Second Wind', icon: '💗', desc: 'Fully restore health.', rarity: 'common' },
+        apply: () => { this.hero.hp = this.stats.maxHp },
       })
     }
     return opts
@@ -1136,6 +1412,10 @@ export class GameEngine {
     h.fireCd = Math.max(0, h.fireCd - dt)
     h.ultCd = Math.max(0, h.ultCd - dt)
     h.healCd = Math.max(0, h.healCd - dt)
+    for (const id of Object.keys(this.skillCd) as SkillId[]) {
+      const cd = this.skillCd[id] ?? 0
+      if (cd > 0) this.skillCd[id] = Math.max(0, cd - dt)
+    }
     h.invuln = Math.max(0, h.invuln - dt)
     h.shieldT = Math.max(0, h.shieldT - dt)
     if (h.swingT > 0) h.swingT -= dt
@@ -1606,8 +1886,7 @@ export class GameEngine {
   private endRun() {
     if (this.status === 'dead') return
     this.status = 'dead'
-    const essence = this.wave * 6 + this.kills * 2 + this.eliteKills * 8 + this.gold
-    this.opts.onRunEnd({ wave: this.wave, kills: this.kills, essence })
+    this.opts.onRunEnd({ wave: this.wave, kills: this.kills })
     this.emit()
   }
 
@@ -2524,13 +2803,11 @@ export class GameEngine {
   private emit() {
     const h = this.hero
     const s = this.stats
-    const ab: AbilityView[] = [
-      { key: 'Q', name: 'Dash', icon: '💨', cdLeft: h.dashCd, cdMax: s.dashCd, manaCost: s.dashMana },
-      { key: 'SPC', name: 'Whirl', icon: '🌪️', cdLeft: h.whirlCd, cdMax: s.whirlCd, manaCost: s.whirlMana },
-      { key: 'E', name: 'Fire', icon: '🔥', cdLeft: h.fireCd, cdMax: s.fireCd, manaCost: s.fireMana },
-      { key: 'R', name: 'Meteor', icon: '☄️', cdLeft: h.ultCd, cdMax: s.ultCd, manaCost: s.ultMana },
-      { key: 'F', name: 'Heal', icon: '✚', cdLeft: h.healCd, cdMax: s.healCd, manaCost: s.healMana },
-    ]
+    const ab: AbilityView[] = this.activeSkills().slice(0, ABILITY_KEYS.length).map((os, i) => {
+      const def = SKILLS[os.id]
+      const info = this.cdInfo(os)
+      return { id: os.id, key: ABILITY_KEYS[i], name: def.name, icon: def.icon, ...info }
+    })
     const state: HudState = {
       status: this.status,
       hp: Math.max(0, Math.round(h.hp)),
@@ -2544,17 +2821,15 @@ export class GameEngine {
       gold: this.gold,
       wave: this.wave,
       kills: this.kills,
-      swordLvl: this.opts.swordLvl,
       swordTier: this.swordTier,
       swordStyleName: SWORD_STYLES[this.swordStyleId].name,
       swordStyleIcon: SWORD_STYLES[this.swordStyleId].icon,
       biome: BIOMES[this.biome].name,
       abilities: ab,
-      weapons: this.weapons.map((w) => ({ icon: WEAPONS[w.id].icon, level: w.level })),
+      skills: this.skills.map((os) => ({ id: os.id, level: os.level })),
       cards: this.status === 'levelup' ? this.choices : [],
       runWave: this.wave,
       runKills: this.kills,
-      essenceEarned: this.wave * 6 + this.kills * 2 + this.eliteKills * 8 + this.gold,
     }
     this.opts.onState(state)
   }
