@@ -288,6 +288,7 @@ export class GameEngine {
   private heroAtk: HTMLImageElement[] = []
   private heroWalkDown: HTMLImageElement[] = []
   private heroWalkSide: HTMLImageElement[] = []
+  private heroWalkUp: HTMLImageElement[] = []
   private enemyImgs: Partial<Record<EnemyKind, HTMLImageElement>> = {}
 
   // ---- designed world landmarks ----
@@ -342,6 +343,7 @@ export class GameEngine {
     this.heroAtk = [load('hero_attack1'), load('hero_attack2'), load('hero_attack3')]
     this.heroWalkDown = [1, 2, 3, 4].map((n) => load(`hero_walk_down_${n}`))
     this.heroWalkSide = [1, 2, 3, 4].map((n) => load(`hero_walk_side_${n}`))
+    this.heroWalkUp = [1, 2, 3, 4].map((n) => load(`hero_walk_up_${n}`))
     const enemyFile: Record<EnemyKind, string> = {
       grunt: 'enemy_goblin', fast: 'enemy_bat', tank: 'enemy_brute', ranged: 'enemy_caster', boss: 'boss_dragon',
     }
@@ -2429,12 +2431,12 @@ export class GameEngine {
       const framesReady = frames.length === 3 && frames.every((a) => this.ready(a))
       let img: HTMLImageElement | undefined = this.heroImg
       let useFrames = false
-      if (swinging && framesReady) {
-        img = frames[st < 0.34 ? 0 : st < 0.7 ? 1 : 2] // wind-up → slash → follow-through
+      if (swinging && framesReady && h.faceDir !== 'up') {
+        img = frames[st < 0.34 ? 0 : st < 0.7 ? 1 : 2] // wind-up → slash → follow-through (front/side only)
         useFrames = true
       } else {
-        // 'up' reuses the front sprite — the back view reads awkwardly, so the hero always faces the camera or sideways.
-        const key = h.faceDir === 'left' || h.faceDir === 'right' ? 'side' : 'down'
+        // Directional idle: front / back / side. (Back swings via rotation since the frames are front-view.)
+        const key = h.faceDir === 'left' || h.faceDir === 'right' ? 'side' : h.faceDir === 'up' ? 'up' : 'down'
         const dir = this.heroDir[key]
         if (this.ready(dir)) img = dir
       }
@@ -2444,9 +2446,13 @@ export class GameEngine {
       const wp = h.walkPhase
       let useWalkFrames = false
       if (walking) {
-        const set = h.faceDir === 'left' || h.faceDir === 'right' ? this.heroWalkSide : this.heroWalkDown
-        if (set.length === 4 && set.every((a) => this.ready(a))) {
-          img = set[Math.floor(wp / (Math.PI / 2)) % 4] // contact → passing → contact → passing
+        const set = h.faceDir === 'left' || h.faceDir === 'right' ? this.heroWalkSide
+          : h.faceDir === 'up' ? this.heroWalkUp
+          : this.heroWalkDown
+        const rdy = set.filter((a) => this.ready(a)) // however many frames exist (2 or 4)
+        if (rdy.length >= 2) {
+          const n = rdy.length
+          img = rdy[Math.floor((wp * n) / (Math.PI * 2)) % n] // step through the frames over one stride
           useWalkFrames = true
         }
       }
