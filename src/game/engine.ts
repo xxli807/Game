@@ -1193,7 +1193,7 @@ export class GameEngine {
     else h.faceDir = fdy < 0 ? 'up' : 'down'
 
     // stride animation
-    if (h.moving) h.walkPhase += dt * 12
+    if (h.moving) h.walkPhase += dt * 10
     else h.walkPhase = 0
     h.x = Math.max(24, Math.min(WORLD_W - 24, h.x))
     h.y = Math.max(24, Math.min(WORLD_H - 24, h.y))
@@ -2415,7 +2415,6 @@ export class GameEngine {
 
     this.drawShadow(h.x, h.y + 22, 17)
     if (this.ready(this.heroImg) || this.ready(this.heroDir.down)) {
-      const bob = h.moving ? Math.abs(Math.sin(h.walkPhase)) * 2.5 : Math.sin(this.floorPhase * 2) * 1
       const flick = h.invuln > 0 && h.shieldT <= 0 && Math.floor(h.invuln * 20) % 2 === 0
       const swinging = h.swingT > 0
       const st = swinging ? 1 - h.swingT / h.swingMax : 0 // 0 → 1 across the swing
@@ -2435,6 +2434,19 @@ export class GameEngine {
         if (this.ready(dir)) img = dir
       }
 
+      // Weight-shifting walk cycle (idle directional sprite only; attack frames animate themselves).
+      const walking = h.moving && !useFrames
+      const wp = h.walkPhase
+      const shift = walking ? Math.sin(wp) : 0             // -1..1: weight rocks side to side each step
+      const bounce = walking ? Math.abs(Math.sin(wp)) : 0  // 0 at footfall, 1 mid-stride
+      const lean = shift * 0.11                             // body leans ~6° toward the planted foot
+      const swayX = shift * 2.4                             // hips drift toward the planted foot
+      const sqX = 1 + (1 - bounce) * 0.05                   // squash & stretch: widen and settle on footfall
+      const sqY = 1 - (1 - bounce) * 0.07
+      const bob = walking
+        ? bounce * 3.6                                      // body rises between footfalls, plants down on each step
+        : (h.moving ? 0 : Math.sin(this.floorPhase * 2) * 1) // gentle breathing while standing still
+
       if (this.ready(img)) {
         // Horizontal mirror: attack frames & the side view flip to match facing.
         let flip = 1
@@ -2447,14 +2459,19 @@ export class GameEngine {
         const ly = (h.faceDir === 'up' ? -1 : h.faceDir === 'down' ? 1 : 0) * swing * 4
         const targetH = 82
         const w = targetH * (img.naturalWidth / img.naturalHeight)
+        const chest = targetH * 0.6
         const feetY = h.y + 28 - bob + ly
-        const pivotY = feetY - targetH * 0.6 // rotate around the chest/hands
         ctx.save()
         if (flick) ctx.globalAlpha = 0.5
-        ctx.translate(h.x + lx, pivotY)
+        // Rock & squash pivot around the feet (the weight shift of a stride)…
+        ctx.translate(h.x + lx + swayX, feetY)
+        ctx.rotate(lean)
+        ctx.scale(sqX, sqY)
+        // …while the sword swing pivots around the chest/hands.
+        ctx.translate(0, -chest)
         ctx.rotate(rot)
         ctx.scale(flip, 1)
-        ctx.drawImage(img, -w / 2, feetY - targetH - pivotY, w, targetH)
+        ctx.drawImage(img, -w / 2, chest - targetH, w, targetH)
         ctx.restore()
         ctx.globalAlpha = 1
       }
