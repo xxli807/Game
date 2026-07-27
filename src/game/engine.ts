@@ -284,6 +284,8 @@ export class GameEngine {
   private tileImgs: Partial<Record<Biome, HTMLImageElement>> = {}
   // character / enemy sprites
   private heroImg?: HTMLImageElement
+  private heroDir: Partial<Record<'up' | 'down' | 'side', HTMLImageElement>> = {}
+  private heroAtk: HTMLImageElement[] = []
   private enemyImgs: Partial<Record<EnemyKind, HTMLImageElement>> = {}
 
   // ---- designed world landmarks ----
@@ -334,6 +336,8 @@ export class GameEngine {
     const biomes: Biome[] = ['dungeon', 'forest', 'snow', 'volcano']
     for (const b of biomes) this.tileImgs[b] = load(`tile_${b}`)
     this.heroImg = load('hero')
+    this.heroDir = { down: load('hero_down'), up: load('hero_up'), side: load('hero_side') }
+    this.heroAtk = [load('hero_attack1'), load('hero_attack2'), load('hero_attack3')]
     const enemyFile: Record<EnemyKind, string> = {
       grunt: 'enemy_goblin', fast: 'enemy_bat', tank: 'enemy_brute', ranged: 'enemy_caster', boss: 'boss_dragon',
     }
@@ -2410,26 +2414,50 @@ export class GameEngine {
     ctx.restore()
 
     this.drawShadow(h.x, h.y + 22, 17)
-    if (this.ready(this.heroImg)) {
-      const img = this.heroImg
+    if (this.ready(this.heroImg) || this.ready(this.heroDir.down)) {
       const bob = h.moving ? Math.abs(Math.sin(h.walkPhase)) * 2.5 : Math.sin(this.floorPhase * 2) * 1
       const flick = h.invuln > 0 && h.shieldT <= 0 && Math.floor(h.invuln * 20) % 2 === 0
-      // swing animation: rotate the whole knight so the sword winds up and slashes
-      const st = h.swingT > 0 ? 1 - h.swingT / h.swingMax : 0
-      const swing = h.swingT > 0 ? Math.sin(st * Math.PI) : 0 // 0 → 1 → 0
-      const rot = swing * 0.55 * h.swingDir
-      const targetH = 80
-      const w = targetH * (img.naturalWidth / img.naturalHeight)
-      const feetY = h.y + 28 - bob
-      const pivotY = feetY - targetH * 0.6 // rotate around the chest/hands
-      ctx.save()
-      if (flick) ctx.globalAlpha = 0.5
-      ctx.translate(h.x, pivotY)
-      ctx.rotate(rot)
-      ctx.scale(h.facing, 1)
-      ctx.drawImage(img, -w / 2, feetY - targetH - pivotY, w, targetH)
-      ctx.restore()
-      ctx.globalAlpha = 1
+      const swinging = h.swingT > 0
+      const st = swinging ? 1 - h.swingT / h.swingMax : 0 // 0 → 1 across the swing
+      const swing = swinging ? Math.sin(st * Math.PI) : 0  // 0 → 1 → 0
+
+      // Pick the sprite: front/side attack frames while slashing, else directional idle.
+      const frames = this.heroAtk
+      const framesReady = frames.length === 3 && frames.every((a) => this.ready(a))
+      let img: HTMLImageElement | undefined = this.heroImg
+      let useFrames = false
+      if (swinging && framesReady && h.faceDir !== 'up') {
+        img = frames[st < 0.34 ? 0 : st < 0.7 ? 1 : 2] // wind-up → slash → follow-through
+        useFrames = true
+      } else {
+        const key = h.faceDir === 'up' ? 'up' : h.faceDir === 'down' ? 'down' : 'side'
+        const dir = this.heroDir[key]
+        if (this.ready(dir)) img = dir
+      }
+
+      if (this.ready(img)) {
+        // Horizontal mirror: attack frames & the side view flip to match facing.
+        let flip = 1
+        if (useFrames) flip = h.facing
+        else if (h.faceDir === 'left') flip = -1
+        // Rotation only drives the back-facing (up) swing; the frames animate themselves.
+        const rot = useFrames ? 0 : swing * 0.5 * h.swingDir
+        // Small forward lunge on the strike so the hit reads.
+        const lx = (h.faceDir === 'left' ? -1 : h.faceDir === 'right' ? 1 : 0) * swing * 5
+        const ly = (h.faceDir === 'up' ? -1 : h.faceDir === 'down' ? 1 : 0) * swing * 4
+        const targetH = 82
+        const w = targetH * (img.naturalWidth / img.naturalHeight)
+        const feetY = h.y + 28 - bob + ly
+        const pivotY = feetY - targetH * 0.6 // rotate around the chest/hands
+        ctx.save()
+        if (flick) ctx.globalAlpha = 0.5
+        ctx.translate(h.x + lx, pivotY)
+        ctx.rotate(rot)
+        ctx.scale(flip, 1)
+        ctx.drawImage(img, -w / 2, feetY - targetH - pivotY, w, targetH)
+        ctx.restore()
+        ctx.globalAlpha = 1
+      }
       if (h.shieldT > 0) {
         ctx.save()
         ctx.globalAlpha = 0.4 + Math.sin(h.walkPhase * 2) * 0.1
