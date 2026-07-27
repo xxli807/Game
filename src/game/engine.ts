@@ -385,7 +385,7 @@ export class GameEngine {
       invuln: 0,
       level: 1,
       xp: 0,
-      xpToNext: 10,
+      xpToNext: 16,
       walkPhase: 0,
       facing: 1,
       faceDir: 'down',
@@ -1021,7 +1021,7 @@ export class GameEngine {
     const h = this.hero
     h.xp -= h.xpToNext
     h.level++
-    h.xpToNext = Math.round(6 + h.level * 5 + h.level * h.level * 0.35)
+    h.xpToNext = Math.round(9 + h.level * 7 + h.level * h.level * 0.55)
     h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.1)
     // every 5th level a big boss marches in
     if (h.level % 5 === 0) this.spawnMegaBoss()
@@ -2425,11 +2425,12 @@ export class GameEngine {
       const framesReady = frames.length === 3 && frames.every((a) => this.ready(a))
       let img: HTMLImageElement | undefined = this.heroImg
       let useFrames = false
-      if (swinging && framesReady && h.faceDir !== 'up') {
+      if (swinging && framesReady) {
         img = frames[st < 0.34 ? 0 : st < 0.7 ? 1 : 2] // wind-up → slash → follow-through
         useFrames = true
       } else {
-        const key = h.faceDir === 'up' ? 'up' : h.faceDir === 'down' ? 'down' : 'side'
+        // 'up' reuses the front sprite — the back view reads awkwardly, so the hero always faces the camera or sideways.
+        const key = h.faceDir === 'left' || h.faceDir === 'right' ? 'side' : 'down'
         const dir = this.heroDir[key]
         if (this.ready(dir)) img = dir
       }
