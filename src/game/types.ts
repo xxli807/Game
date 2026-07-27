@@ -270,16 +270,14 @@ export interface HudState {
   gold: number
   wave: number
   kills: number
-  swordLvl: number
   swordTier: number
   swordStyleName: string
   swordStyleIcon: string
   biome: string
   abilities: AbilityView[]
-  weapons: { icon: string; level: number }[]
+  skills: OwnedSkill[]
   cards: DraftChoice[]
   // filled on death
   runWave: number
   runKills: number
-  essenceEarned: number
 }
