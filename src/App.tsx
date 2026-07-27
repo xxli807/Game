@@ -1,14 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { GameEngine, WIDTH, HEIGHT } from './game/engine'
-import {
-  HudState,
-  MetaState,
-  statsFromMeta,
-  swordLevel,
-  FORGE,
-  forgeCost,
-  ForgeId,
-} from './game/types'
+import { baseStats, HudState, MetaState } from './game/types'
 import { loadMeta, saveMeta } from './game/meta'
 import HUD from './components/HUD'
 import LevelUpModal from './components/LevelUpModal'
@@ -18,28 +10,10 @@ export default function App() {
   const [meta, setMeta] = useState<MetaState>(() => loadMeta())
   const [inRun, setInRun] = useState(false)
 
-  const buyForge = (id: string) => {
-    const u = FORGE.find((f) => f.id === id)!
-    setMeta((m) => {
-      const level = m.forge[id as ForgeId]
-      if (level >= u.maxLevel) return m
-      const cost = forgeCost(u, level)
-      if (m.essence < cost) return m
-      const next: MetaState = {
-        ...m,
-        essence: m.essence - cost,
-        forge: { ...m.forge, [id]: level + 1 },
-      }
-      saveMeta(next)
-      return next
-    })
-  }
-
-  const handleRunEnd = (r: { wave: number; kills: number; essence: number }) => {
+  const handleRunEnd = (r: { wave: number; kills: number }) => {
     setMeta((m) => {
       const next: MetaState = {
         ...m,
-        essence: m.essence + r.essence,
         bestWave: Math.max(m.bestWave, r.wave),
         totalKills: m.totalKills + r.kills,
         runs: m.runs + 1,
@@ -52,25 +26,23 @@ export default function App() {
   if (!inRun) {
     return (
       <div className="app">
-        <MetaScreen meta={meta} onBuy={buyForge} onStart={() => setInRun(true)} />
+        <MetaScreen meta={meta} onStart={() => setInRun(true)} />
       </div>
     )
   }
 
   return (
     <div className="app">
-      <GameScreen meta={meta} onRunEnd={handleRunEnd} onExit={() => setInRun(false)} />
+      <GameScreen onRunEnd={handleRunEnd} onExit={() => setInRun(false)} />
     </div>
   )
 }
 
 function GameScreen({
-  meta,
   onRunEnd,
   onExit,
 }: {
-  meta: MetaState
-  onRunEnd: (r: { wave: number; kills: number; essence: number }) => void
+  onRunEnd: (r: { wave: number; kills: number }) => void
   onExit: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -89,8 +61,7 @@ function GameScreen({
   useEffect(() => {
     if (!canvasRef.current) return
     const engine = new GameEngine(canvasRef.current, {
-      stats: statsFromMeta(meta),
-      swordLvl: swordLevel(meta),
+      stats: baseStats(),
       onState: setHud,
       onRunEnd: (r) => {
         if (endedRef.current) return
@@ -130,8 +101,8 @@ function GameScreen({
           <div className="death-card">
             <h1>💀 Game Over</h1>
             <p>You reached <b>Level {hud.level}</b> and beat <b>{hud.runKills}</b> monsters!</p>
-            <p className="essence-earned">🪙 +{hud.essenceEarned} coins earned</p>
-            <p className="death-hint">Spend your coins on upgrades to get further next time.</p>
+            <p className="essence-earned">Monster level reached: {hud.runWave}</p>
+            <p className="death-hint">Build a different five-skill loadout next run.</p>
             <button className="play-btn" onClick={onExit}>🏠 Back to Menu</button>
           </div>
         </div>

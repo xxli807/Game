@@ -9,9 +9,9 @@ export function loadMeta(): MetaState {
     const parsed = JSON.parse(raw) as Partial<MetaState>
     const base = defaultMeta()
     return {
-      ...base,
-      ...parsed,
-      forge: { ...base.forge, ...(parsed.forge ?? {}) },
+      bestWave: parsed.bestWave ?? base.bestWave,
+      totalKills: parsed.totalKills ?? base.totalKills,
+      runs: parsed.runs ?? base.runs,
     }
   } catch {
     return defaultMeta()
