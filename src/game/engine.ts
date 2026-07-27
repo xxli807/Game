@@ -10,7 +10,6 @@ import {
   SKILLS,
   SKILL_SYNERGIES,
   BASE_SKILL_IDS,
-  xpRequiredForLevel,
 } from './types'
 import {
   Biome,
@@ -52,6 +51,7 @@ interface Hero {
   attackTimer: number
   swingT: number // slash animation timer
   swingMax: number
+  skillAttackT: number // keeps attack frames active briefly after a successful skill
   swingAngle: number
   swingDir: number // +1 / -1 alternating sweep direction
   dashCd: number
@@ -64,9 +64,6 @@ interface Hero {
   dashDir: Vec
   dashHits: Set<Enemy>
   invuln: number
-  level: number
-  xp: number
-  xpToNext: number
   walkPhase: number
   facing: number // 1 = right, -1 = left (side view flip)
   faceDir: 'up' | 'down' | 'left' | 'right'
@@ -87,7 +84,6 @@ interface Enemy {
   damage: number
   touch: number // contact cooldown
   shoot: number // ranged fire timer
-  xp: number
   hitFlash: number
   knock: Vec
   phase: number // idle bob animation
@@ -116,16 +112,6 @@ interface Ambient {
   size: number
   color: string
   kind: Biome
-}
-
-interface Gem {
-  x: number
-  y: number
-  vx: number
-  vy: number
-  value: number
-  big: boolean
-  magnet: boolean
 }
 
 type PickupType = 'heart' | 'magnet' | 'bomb' | 'clock' | 'gold' | 'chest'
@@ -198,7 +184,7 @@ interface Meteor {
 }
 
 interface RunEnd {
-  wave: number
+  clearedStage: number
   kills: number
 }
 
@@ -206,6 +192,7 @@ interface Opts {
   stats: Stats
   onState: (s: HudState) => void
   onRunEnd: (r: RunEnd) => void
+  onStageCleared: (stage: number) => void
 }
 
 // Ability-bar slots, in the order owned active skills fill them.
@@ -254,14 +241,15 @@ export class GameEngine {
   private rings: RingFx[] = []
   private meteors: Meteor[] = []
 
-  private wave = 0
+  private stage = 1
+  private stageSpawned = 0
+  private stageKills = 0
   private kills = 0
   private eliteKills = 0
   private swordTier = 1
   private swordStyleId: SwordStyleId = 'steel'
   private biome: Biome = 'dungeon'
   private spawnTimer = 0
-  private bossTimer = 45
   private swingFlip = 1
   private weapons: OwnedWeapon[] = []
   private skills: OwnedSkill[] = []
@@ -272,14 +260,13 @@ export class GameEngine {
   private choiceActions: Record<string, () => void> = {}
   private decor: Decoration[] = []
   private ambient: Ambient[] = []
-  private gems: Gem[] = []
   private pickups: Pickup[] = []
   private gold = 0
   private freezeT = 0
   private flash = 0
   private treasureTimer = 18
   private survTime = 0
-  private readonly MAX_ENEMIES = 140
+  private readonly MAX_STAGE_ENEMIES = 140
   private cam: Vec = { x: 0, y: 0 }
 
   // painted ground textures per biome (loaded from public/arts)
@@ -395,6 +382,7 @@ export class GameEngine {
       attackTimer: 0,
       swingT: 0,
       swingMax: 0.3,
+      skillAttackT: 0,
       swingAngle: 0,
       swingDir: 1,
       dashCd: 0,
@@ -407,9 +395,6 @@ export class GameEngine {
       dashDir: { x: 1, y: 0 },
       dashHits: new Set(),
       invuln: 0,
-      level: 1,
-      xp: 0,
-      xpToNext: xpRequiredForLevel(1),
       walkPhase: 0,
       facing: 1,
       faceDir: 'down',
@@ -422,7 +407,6 @@ export class GameEngine {
     this.rings = []
     this.meteors = []
     this.ambient = []
-    this.gems = []
     this.pickups = []
     this.bolts = []
     this.orbitAngle = 0
@@ -441,7 +425,9 @@ export class GameEngine {
     this.flash = 0
     this.treasureTimer = 18
     this.survTime = 0
-    this.wave = 1
+    this.stage = 1
+    this.stageSpawned = 0
+    this.stageKills = 0
     this.kills = 0
     this.eliteKills = 0
     this.swordTier = 1
@@ -452,7 +438,6 @@ export class GameEngine {
     this.generateDecor()
     this.centerCamera()
     this.spawnTimer = 0
-    this.bossTimer = 45
     this.status = 'playing'
   }
 
@@ -537,16 +522,44 @@ export class GameEngine {
   }
 
   chooseCard(id: string) {
-    if (this.status !== 'levelup') return
+    if (this.status !== 'skillselect') return
     const action = this.choiceActions[id]
     if (action) action()
-    // maybe multiple pending level-ups
-    if (this.hero.xp >= this.hero.xpToNext) {
-      this.doLevelUp()
+    this.startStage(this.stage + 1)
+    this.emit()
+  }
+
+  private stageEnemyTotal(stage = this.stage): number {
+    if (stage % 10 === 0) return 1
+    return Math.min(this.MAX_STAGE_ENEMIES, 8 + stage * 2)
+  }
+
+  private startStage(stage: number) {
+    this.stage = stage
+    this.stageSpawned = 0
+    this.stageKills = 0
+    this.spawnTimer = 0
+    this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
+    this.status = 'playing'
+    this.lastTs = performance.now()
+    if (stage % 10 === 0) {
+      this.floatText(this.hero.x, this.hero.y - 70, `⚠ BOSS STAGE ${stage}!`, '#ff6b6b', 30)
+      this.shake(14)
     } else {
-      this.status = 'playing'
-      this.lastTs = performance.now()
+      this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${stage}`, '#ffd43b', 28)
     }
+  }
+
+  private completeStage() {
+    if (this.status !== 'playing') return
+    this.status = 'skillselect'
+    this.enemies = []
+    this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
+    this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + this.stats.maxHp * 0.12)
+    this.hero.mana = Math.min(this.stats.maxMana, this.hero.mana + this.stats.maxMana * 0.2)
+    this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${this.stage} CLEARED!`, '#69db7c', 30)
+    this.opts.onStageCleared(this.stage)
+    this.buildChoices()
     this.emit()
   }
 
@@ -671,9 +684,9 @@ export class GameEngine {
     this.keys.delete(e.key.toLowerCase())
   }
 
-  // enemy power grows with survival time, hero level, and sword level
+  // Enemy power grows with the finite stage number.
   private scale(): number {
-    return 1 + (this.wave - 1) * 0.18 + (this.hero.level - 1) * 0.07
+    return 1 + (this.stage - 1) * 0.12
   }
 
   private spawnEnemy(force?: EnemyKind) {
@@ -682,8 +695,8 @@ export class GameEngine {
     if (force) {
       kind = force
     } else {
-      // as you level up, tougher enemy types make up more of the horde
-      const threat = this.wave + Math.floor(this.hero.level / 2)
+      // Later stages introduce tougher enemy types more often.
+      const threat = this.stage
       const roll = Math.random()
       if (threat >= 4 && roll < 0.18) kind = 'ranged'
       else if (threat >= 3 && roll < 0.4) kind = 'tank'
@@ -701,7 +714,7 @@ export class GameEngine {
     y = Math.max(20, Math.min(WORLD_H - 20, y))
 
     // special "elite" beasts: rarer, tougher, glowing — worth big rewards
-    const eliteChance = kind === 'boss' ? 0 : Math.min(0.16, 0.02 + this.wave * 0.01)
+    const eliteChance = kind === 'boss' ? 0 : Math.min(0.16, 0.02 + this.stage * 0.008)
     const elite = Math.random() < eliteChance
     const hp = spec.hp * (elite ? 2.6 : 1)
 
@@ -712,11 +725,10 @@ export class GameEngine {
       kind,
       emoji: KIND_EMOJI[kind],
       radius: spec.radius * (elite ? 1.35 : 1),
-      speed: spec.speed * (elite ? 0.92 : 1) * (1 + this.hero.level * 0.012),
+      speed: spec.speed * (elite ? 0.92 : 1) * (1 + this.stage * 0.008),
       damage: spec.damage * (elite ? 1.4 : 1),
       touch: 0,
       shoot: 1 + Math.random(),
-      xp: spec.xp * (elite ? 3 : 1),
       hitFlash: 0,
       knock: { x: 0, y: 0 },
       phase: Math.random() * Math.PI * 2,
@@ -730,11 +742,11 @@ export class GameEngine {
 
   private enemySpec(kind: EnemyKind, s: number) {
     switch (kind) {
-      case 'grunt': return { hp: 15 * s, speed: 66, damage: 6 * s, radius: 18, xp: 3 }
-      case 'fast': return { hp: 9 * s, speed: 150, damage: 5 * s, radius: 15, xp: 4 }
-      case 'tank': return { hp: 52 * s, speed: 42, damage: 12 * s, radius: 27, xp: 8 }
-      case 'ranged': return { hp: 14 * s, speed: 48, damage: 9 * s, radius: 17, xp: 6 }
-      case 'boss': return { hp: 520 * s, speed: 46, damage: 24 * s, radius: 46, xp: 60 }
+      case 'grunt': return { hp: 15 * s, speed: 66, damage: 6 * s, radius: 18 }
+      case 'fast': return { hp: 9 * s, speed: 150, damage: 5 * s, radius: 15 }
+      case 'tank': return { hp: 52 * s, speed: 42, damage: 12 * s, radius: 27 }
+      case 'ranged': return { hp: 14 * s, speed: 48, damage: 9 * s, radius: 17 }
+      case 'boss': return { hp: 520 * s, speed: 46, damage: 24 * s, radius: 46 }
     }
   }
 
@@ -751,6 +763,7 @@ export class GameEngine {
     if (h.dashCd > 0) return
     if (!this.spendMana(this.stats.dashMana)) return
     h.dashCd = this.stats.dashCd
+    this.startSkillAttackAnimation()
     h.dashT = 0.16
     h.invuln = 0.16
     const dir = this.aimDir()
@@ -764,6 +777,7 @@ export class GameEngine {
     if (h.whirlCd > 0) return
     if (!this.spendMana(this.stats.whirlMana)) return
     h.whirlCd = this.stats.whirlCd
+    this.startSkillAttackAnimation()
     const R = this.stats.whirlRadius
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: R, life: 0.35, color: 'rgba(120,220,255,0.6)' })
     for (const e of this.enemies) {
@@ -784,6 +798,7 @@ export class GameEngine {
     if (h.fireCd > 0) return
     if (!this.spendMana(this.stats.fireMana)) return
     h.fireCd = this.stats.fireCd
+    this.startSkillAttackAnimation()
     const baseA = this.hero.aim
     const n = this.stats.fireCount
     const spread = 0.18
@@ -805,6 +820,7 @@ export class GameEngine {
     if (h.ultCd > 0) return
     if (!this.spendMana(this.stats.ultMana)) return
     h.ultCd = this.stats.ultCd
+    this.startSkillAttackAnimation()
     const n = this.stats.ultMeteors
     const spread = this.stats.ultRadius
     const cx = this.mouse.x
@@ -830,6 +846,7 @@ export class GameEngine {
     if (h.healCd > 0) return
     if (!this.spendMana(this.stats.healMana)) return
     h.healCd = this.stats.healCd
+    this.startSkillAttackAnimation()
     h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.healAmount)
     h.shieldT = this.stats.shieldTime
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 60, life: 0.35, color: 'rgba(120,255,170,0.7)' })
@@ -869,7 +886,18 @@ export class GameEngine {
     if (!cfg) return false
     if (!this.spendMana(cfg.mana)) return false
     this.skillCd[id] = cfg.cd
+    this.startSkillAttackAnimation()
     return true
+  }
+
+  private startSkillAttackAnimation() {
+    const h = this.hero
+    this.swingFlip = -this.swingFlip
+    h.swingAngle = h.aim
+    h.swingDir = this.swingFlip
+    h.swingT = 0.32
+    h.swingMax = h.swingT
+    h.skillAttackT = h.swingT
   }
 
   private cdInfo(os: OwnedSkill): { cdLeft: number; cdMax: number; manaCost: number } {
@@ -1085,6 +1113,7 @@ export class GameEngine {
 
   // ---------- damage helpers ----------
   private damageEnemy(e: Enemy, base: number, fromAbility: boolean) {
+    if (e.hp <= 0) return
     let dmg = base
     let crit = false
     if (Math.random() < this.stats.crit) {
@@ -1107,24 +1136,12 @@ export class GameEngine {
   private killEnemy(e: Enemy) {
     e.hp = 0
     this.kills++
+    this.stageKills++
     if (e.elite) {
       this.eliteKills++
       this.floatText(e.x, e.y - 10, '★ SPECIAL ★', '#ffd43b', 20)
     }
     if (e.kind === 'boss') this.floatText(e.x, e.y, 'BOSS DOWN!', '#ff6b6b', 24)
-    // drop XP gems that the hero collects (Vampire-Survivors style)
-    const gemCount = e.kind === 'boss' ? 10 : e.elite ? 4 : 1
-    const big = e.kind === 'boss' || e.elite
-    for (let i = 0; i < gemCount; i++) {
-      const a = Math.random() * Math.PI * 2
-      const sp = 30 + Math.random() * 90
-      this.gems.push({
-        x: e.x, y: e.y,
-        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-        value: Math.max(1, Math.round(e.xp / gemCount)),
-        big, magnet: false,
-      })
-    }
     const burst = e.kind === 'boss' ? 26 : e.elite ? 12 : 4
     const col = BIOMES[this.biome].accent
     for (let i = 0; i < burst; i++) {
@@ -1198,8 +1215,11 @@ export class GameEngine {
         break
       }
       case 'magnet':
-        for (const gem of this.gems) gem.magnet = true
-        this.floatText(h.x, h.y - 30, 'MAGNET!', '#8cf5ff', 24)
+        for (const pickup of this.pickups) {
+          pickup.x += (h.x - pickup.x) * 0.8
+          pickup.y += (h.y - pickup.y) * 0.8
+        }
+        this.floatText(h.x, h.y - 30, 'LOOT PULLED!', '#8cf5ff', 24)
         break
       case 'bomb':
         this.flash = 1
@@ -1214,9 +1234,9 @@ export class GameEngine {
         this.floatText(h.x, h.y - 30, '⏱ FREEZE!', '#a5d8ff', 26)
         break
       case 'chest': {
-        this.gold += 15
-        h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.25)
-        this.gainXp(this.hero.xpToNext) // guaranteed level-up draft
+        this.gold += 25
+        h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.35)
+        h.mana = this.stats.maxMana
         this.floatText(h.x, h.y - 36, '🎁 TREASURE!', '#ffd43b', 30)
         for (let i = 0; i < 24; i++) {
           const a = Math.random() * Math.PI * 2
@@ -1227,34 +1247,6 @@ export class GameEngine {
         break
       }
     }
-  }
-
-  private updateGems(dt: number) {
-    const h = this.hero
-    const mag = this.stats.pickupRadius
-    for (const g of this.gems) {
-      const dx = h.x - g.x
-      const dy = h.y - g.y
-      const d = Math.hypot(dx, dy)
-      if (g.magnet || d < mag) {
-        g.magnet = true
-        const pull = 620
-        g.vx += (dx / (d || 1)) * pull * dt
-        g.vy += (dy / (d || 1)) * pull * dt
-        g.vx *= 0.9
-        g.vy *= 0.9
-      } else {
-        g.vx *= 0.9
-        g.vy *= 0.9
-      }
-      g.x += g.vx * dt
-      g.y += g.vy * dt
-      if (d < 22) {
-        this.gainXp(g.value)
-        g.value = -1 // mark collected
-      }
-    }
-    if (this.gems.some((g) => g.value < 0)) this.gems = this.gems.filter((g) => g.value >= 0)
   }
 
   /** In-run blade forging: after enough kills the sword ascends a tier. */
@@ -1274,30 +1266,8 @@ export class GameEngine {
     }
   }
 
-  private gainXp(amount: number) {
-    this.hero.xp += amount
-    let guard = 0
-    while (this.hero.xp >= this.hero.xpToNext && this.status === 'playing' && guard++ < 20) {
-      this.doLevelUp()
-    }
-  }
-
-  private doLevelUp() {
-    const h = this.hero
-    h.xp -= h.xpToNext
-    h.level++
-    h.xpToNext = xpRequiredForLevel(h.level)
-    h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.1)
-    // every 5th level a big boss marches in
-    if (h.level % 5 === 0) this.spawnMegaBoss()
-    // pause and let the player pick a skill
-    this.status = 'levelup'
-    this.buildChoices()
-    this.emit()
-  }
-
   private buildChoices() {
-    const opts = this.levelUpOptions()
+    const opts = this.skillDraftOptions()
     // weighted pick of 3 distinct options
     const chosen: LevelOpt[] = []
     const pool = [...opts]
@@ -1324,7 +1294,7 @@ export class GameEngine {
     return this.skills.find((os) => os.id === id)
   }
 
-  private levelUpOptions(): LevelOpt[] {
+  private skillDraftOptions(): LevelOpt[] {
     const opts: LevelOpt[] = []
 
     // 1) Synergy evolutions — offered when you own BOTH ingredients and not the result yet.
@@ -1389,9 +1359,9 @@ export class GameEngine {
     return opts
   }
 
-  private spawnMegaBoss() {
+  private spawnStageBoss() {
     const h = this.hero
-    // spawn a boss and beef it up to a "big boss"
+    // Boss stages contain exactly one oversized, strengthened monster.
     const before = this.enemies.length
     this.spawnEnemy('boss')
     const boss = this.enemies[before]
@@ -1439,6 +1409,7 @@ export class GameEngine {
     h.shieldT = Math.max(0, h.shieldT - dt)
     this.heroTurnT = Math.max(0, this.heroTurnT - dt)
     if (h.swingT > 0) h.swingT -= dt
+    if (h.skillAttackT > 0) h.skillAttackT -= dt
 
     // aim toward the cursor (drives the sword, not necessarily the body)
     h.aim = Math.atan2(this.mouse.y - h.y, this.mouse.x - h.x)
@@ -1541,32 +1512,37 @@ export class GameEngine {
       }
     }
 
-    // dynamic sword: it sweeps on its own rhythm, always, whether or not
-    // an enemy is in reach — so the blade is perpetually in motion.
-    h.attackTimer -= dt
-    if (h.attackTimer <= 0) {
-      h.attackTimer = s.attackInterval
-      this.swordSwing(this.nearestEnemy(s.swordRange + 200))
+    // The sword and attack frames stay idle until a monster enters melee range.
+    const attackTarget = this.nearestEnemy(s.swordRange + 50)
+    if (attackTarget) {
+      h.attackTimer -= dt
+      if (h.attackTimer <= 0) {
+        h.attackTimer = s.attackInterval
+        this.swordSwing(attackTarget)
+      }
+    } else {
+      h.attackTimer = 0
+      if (h.skillAttackT <= 0) h.swingT = 0
     }
 
     // auto-weapons fire on their own
     this.updateWeapons(dt)
 
-    // survival difficulty ramps with time; enemies stream in endlessly
+    // Each stage owns a finite spawn budget. Clearing that budget opens the skill draft.
     this.survTime += dt
-    this.wave = 1 + Math.floor(this.survTime / 22)
-    const targetPop = Math.min(this.MAX_ENEMIES, 18 + Math.floor(this.survTime * 0.8) + this.hero.level * 2)
+    const stageTotal = this.stageEnemyTotal()
     this.spawnTimer -= dt
-    if (this.spawnTimer <= 0 && this.enemies.length < targetPop) {
-      const burst = 1 + Math.floor(this.wave / 3)
-      for (let i = 0; i < burst; i++) this.spawnEnemy()
-      this.spawnTimer = 0.25
-    }
-    // periodic boss
-    this.bossTimer -= dt
-    if (this.bossTimer <= 0) {
-      this.bossTimer = 45
-      this.spawnEnemy('boss')
+    if (this.spawnTimer <= 0 && this.stageSpawned < stageTotal) {
+      if (this.stage % 10 === 0) {
+        this.spawnStageBoss()
+        this.stageSpawned = 1
+      } else {
+        const remaining = stageTotal - this.stageSpawned
+        const burst = Math.min(remaining, 1 + Math.floor(this.stage / 4))
+        for (let i = 0; i < burst; i++) this.spawnEnemy()
+        this.stageSpawned += burst
+      }
+      this.spawnTimer = 0.22
     }
 
     // periodic treasure appears out in the world — worth running for
@@ -1586,7 +1562,6 @@ export class GameEngine {
     this.flash = Math.max(0, this.flash - dt * 2.5)
 
     this.updateEnemies(dt)
-    this.updateGems(dt)
     this.updatePickups(dt)
     this.updateProjectiles(dt)
     this.updateMeteors(dt)
@@ -1604,7 +1579,15 @@ export class GameEngine {
     }
     this.particles = this.particles.filter((p) => p.life > 0)
 
-    if (h.hp <= 0) this.endRun()
+    if (h.hp <= 0) {
+      this.endRun()
+    } else if (
+      this.status === 'playing'
+      && this.stageSpawned >= stageTotal
+      && this.enemies.every((enemy) => enemy.hp <= 0)
+    ) {
+      this.completeStage()
+    }
 
     this.emit()
   }
@@ -1919,7 +1902,7 @@ export class GameEngine {
   private endRun() {
     if (this.status === 'dead') return
     this.status = 'dead'
-    this.opts.onRunEnd({ wave: this.wave, kills: this.kills })
+    this.opts.onRunEnd({ clearedStage: Math.max(0, this.stage - 1), kills: this.kills })
     this.emit()
   }
 
@@ -2050,22 +2033,6 @@ export class GameEngine {
       ctx.strokeStyle = 'rgba(255,180,80,0.85)'
       ctx.lineWidth = 4
       ctx.beginPath(); ctx.moveTo(m.x, m.y - fall - 20); ctx.lineTo(m.x, m.y - fall); ctx.stroke()
-    }
-
-    // XP gems (only those in view)
-    for (const g of this.gems) {
-      if (!this.inView(g.x, g.y, 30)) continue
-      const r = g.big ? 6 : 4
-      ctx.save()
-      ctx.shadowColor = g.big ? '#ffd43b' : '#8cf5ff'
-      ctx.shadowBlur = 10
-      ctx.fillStyle = g.big ? '#ffe066' : '#63e6ff'
-      ctx.translate(g.x, g.y)
-      ctx.rotate(this.floorPhase * 2)
-      ctx.beginPath()
-      ctx.moveTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r); ctx.lineTo(-r, 0); ctx.closePath()
-      ctx.fill()
-      ctx.restore()
     }
 
     // ground loot pickups
@@ -2857,12 +2824,12 @@ export class GameEngine {
       maxHp: Math.round(s.maxHp),
       mana: Math.round(h.mana),
       maxMana: Math.round(s.maxMana),
-      level: h.level,
-      xp: Math.round(h.xp),
-      xpToNext: h.xpToNext,
       time: this.survTime,
       gold: this.gold,
-      wave: this.wave,
+      stage: this.stage,
+      stageKills: this.stageKills,
+      stageEnemyTotal: this.stageEnemyTotal(),
+      bossStage: this.stage % 10 === 0,
       kills: this.kills,
       swordTier: this.swordTier,
       swordStyleName: SWORD_STYLES[this.swordStyleId].name,
@@ -2870,8 +2837,7 @@ export class GameEngine {
       biome: BIOMES[this.biome].name,
       abilities: ab,
       skills: this.skills.map((os) => ({ id: os.id, level: os.level })),
-      cards: this.status === 'levelup' ? this.choices : [],
-      runWave: this.wave,
+      cards: this.status === 'skillselect' ? this.choices : [],
       runKills: this.kills,
     }
     this.opts.onState(state)

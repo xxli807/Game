@@ -10,11 +10,20 @@ export default function App() {
   const [meta, setMeta] = useState<MetaState>(() => loadMeta())
   const [inRun, setInRun] = useState(false)
 
-  const handleRunEnd = (r: { wave: number; kills: number }) => {
+  const handleStageCleared = (stage: number) => {
+    setMeta((m) => {
+      if (stage <= m.bestStage) return m
+      const next = { ...m, bestStage: stage }
+      saveMeta(next)
+      return next
+    })
+  }
+
+  const handleRunEnd = (r: { clearedStage: number; kills: number }) => {
     setMeta((m) => {
       const next: MetaState = {
         ...m,
-        bestWave: Math.max(m.bestWave, r.wave),
+        bestStage: Math.max(m.bestStage, r.clearedStage),
         totalKills: m.totalKills + r.kills,
         runs: m.runs + 1,
       }
@@ -33,16 +42,22 @@ export default function App() {
 
   return (
     <div className="app">
-      <GameScreen onRunEnd={handleRunEnd} onExit={() => setInRun(false)} />
+      <GameScreen
+        onStageCleared={handleStageCleared}
+        onRunEnd={handleRunEnd}
+        onExit={() => setInRun(false)}
+      />
     </div>
   )
 }
 
 function GameScreen({
+  onStageCleared,
   onRunEnd,
   onExit,
 }: {
-  onRunEnd: (r: { wave: number; kills: number }) => void
+  onStageCleared: (stage: number) => void
+  onRunEnd: (r: { clearedStage: number; kills: number }) => void
   onExit: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -63,6 +78,7 @@ function GameScreen({
     const engine = new GameEngine(canvasRef.current, {
       stats: baseStats(),
       onState: setHud,
+      onStageCleared,
       onRunEnd: (r) => {
         if (endedRef.current) return
         endedRef.current = true
@@ -81,15 +97,20 @@ function GameScreen({
 
       {hud && <HUD state={hud} onAbility={(key) => engineRef.current?.castAbility(key)} />}
 
-      {hud?.status === 'levelup' && (
-        <LevelUpModal cards={hud.cards} onPick={(id) => engineRef.current?.chooseCard(id)} />
+      {hud?.status === 'skillselect' && (
+        <LevelUpModal
+          cards={hud.cards}
+          skills={hud.skills}
+          clearedStage={hud.stage}
+          onPick={(id) => engineRef.current?.chooseCard(id)}
+        />
       )}
 
       {hud?.status === 'paused' && (
         <div className="overlay">
           <div className="death-card">
             <h1>⏸ Paused</h1>
-            <p>Level <b>{hud.level}</b> · <b>{hud.kills}</b> monsters beaten</p>
+            <p>Stage <b>{hud.stage}</b> · <b>{hud.kills}</b> monsters beaten</p>
             <button className="play-btn" onClick={() => engineRef.current?.resume()}>▶ Resume</button>
             <button className="exit-btn-inline" onClick={onExit}>Quit to Menu</button>
           </div>
@@ -100,8 +121,8 @@ function GameScreen({
         <div className="overlay">
           <div className="death-card">
             <h1>💀 Game Over</h1>
-            <p>You reached <b>Level {hud.level}</b> and beat <b>{hud.runKills}</b> monsters!</p>
-            <p className="essence-earned">Monster level reached: {hud.runWave}</p>
+            <p>You reached <b>Stage {hud.stage}</b> and beat <b>{hud.runKills}</b> monsters!</p>
+            <p className="essence-earned">Stages cleared: {Math.max(0, hud.stage - 1)}</p>
             <p className="death-hint">Build a different five-skill loadout next run.</p>
             <button className="play-btn" onClick={onExit}>🏠 Back to Menu</button>
           </div>

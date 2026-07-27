@@ -1,12 +1,20 @@
 import { useEffect } from 'react'
-import { DraftChoice } from '../game/types'
+import {
+  DraftChoice,
+  OwnedSkill,
+  SKILLS,
+  SKILL_SYNERGIES,
+  SkillId,
+} from '../game/types'
 
 interface Props {
   cards: DraftChoice[]
+  skills: OwnedSkill[]
+  clearedStage: number
   onPick: (id: string) => void
 }
 
-export default function LevelUpModal({ cards, onPick }: Props) {
+export default function LevelUpModal({ cards, skills, clearedStage, onPick }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === '1' && cards[0]) onPick(cards[0].id)
@@ -20,21 +28,78 @@ export default function LevelUpModal({ cards, onPick }: Props) {
   return (
     <div className="overlay">
       <div className="levelup">
-        <h2>⚡ LEVEL UP! ⚡</h2>
-        <p className="levelup-sub">Choose an upgrade</p>
+        <h2>✓ STAGE {clearedStage} CLEARED!</h2>
+        <p className="levelup-sub">Choose a skill before the next stage</p>
+        <div className="levelup-loadout">
+          <span className="levelup-loadout-label">Current skills</span>
+          <div className="levelup-skills">
+            {skills.map((skill) => {
+              const definition = SKILLS[skill.id]
+              return (
+                <div
+                  key={skill.id}
+                  className="levelup-skill"
+                  title={`${definition.name} · Level ${skill.level}`}
+                >
+                  <span className="levelup-skill-icon">{definition.icon}</span>
+                  <span className="levelup-skill-name">{definition.name}</span>
+                  <span className="levelup-skill-level">Lv {skill.level}</span>
+                </div>
+              )
+            })}
+            {Array.from({ length: Math.max(0, 5 - skills.length) }, (_, index) => (
+              <div key={`empty-${index}`} className="levelup-skill levelup-skill-empty">
+                Empty slot
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="card-row">
-          {cards.map((c, i) => (
-            <button key={c.id} className={`card card-${c.rarity}`} onClick={() => onPick(c.id)}>
-              <div className="card-num">{i + 1}</div>
-              {c.tag && <div className="card-tag">{c.tag}</div>}
-              <div className="card-icon">{c.icon}</div>
-              <div className="card-name">{c.name}</div>
-              <div className="card-rarity">{c.rarity}</div>
-              <div className="card-desc">{c.desc}</div>
-            </button>
-          ))}
+          {cards.map((c, i) => {
+            const synergies = getNewSkillSynergies(c, skills)
+            return (
+              <button
+                key={c.id}
+                className={`card card-${c.rarity}${synergies.length ? ' card-synergy' : ''}`}
+                onClick={() => onPick(c.id)}
+              >
+                <div className="card-num">{i + 1}</div>
+                {c.tag && <div className="card-tag">{c.tag}</div>}
+                <div className="card-icon">{c.icon}</div>
+                <div className="card-name">{c.name}</div>
+                <div className="card-rarity">{c.rarity}</div>
+                <div className="card-desc">{c.desc}</div>
+                {synergies.map(({ ownedId, resultId }) => (
+                  <div className="card-synergy-note" key={resultId}>
+                    <span className="card-synergy-label">✨ SYNERGY</span>
+                    <span>
+                      + {SKILLS[ownedId].icon} {SKILLS[ownedId].name}
+                      {' → '}
+                      {SKILLS[resultId].name}
+                    </span>
+                  </div>
+                ))}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
   )
+}
+
+function getNewSkillSynergies(card: DraftChoice, skills: OwnedSkill[]) {
+  if (!card.id.startsWith('new-')) return []
+
+  const candidateId = card.id.slice(4) as SkillId
+  if (!SKILLS[candidateId]) return []
+
+  const ownedIds = new Set(skills.map((skill) => skill.id))
+  return SKILL_SYNERGIES.flatMap((synergy) => {
+    if (ownedIds.has(synergy.result) || !synergy.ingredients.includes(candidateId)) return []
+    const ownedId = synergy.ingredients.find(
+      (ingredient) => ingredient !== candidateId && ownedIds.has(ingredient),
+    )
+    return ownedId ? [{ ownedId, resultId: synergy.result }] : []
+  })
 }

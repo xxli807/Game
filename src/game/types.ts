@@ -100,14 +100,14 @@ export function baseStats(): Stats {
 }
 
 export interface MetaState {
-  bestWave: number
+  bestStage: number
   totalKills: number
   runs: number
 }
 
 export function defaultMeta(): MetaState {
   return {
-    bestWave: 0,
+    bestStage: 0,
     totalKills: 0,
     runs: 0,
   }
@@ -205,15 +205,6 @@ export const BASE_SKILL_IDS = (Object.keys(SKILLS) as SkillId[]).filter(
   (id) => !SKILL_SYNERGIES.some((synergy) => synergy.result === id),
 )
 
-/** XP needed to advance from the supplied level.
- * Cost compounds every level and receives another large jump after levels 10, 20, 30, etc. */
-export function xpRequiredForLevel(level: number): number {
-  const safeLevel = Math.max(1, level)
-  const perLevelGrowth = Math.pow(1.12, safeLevel - 1)
-  const milestoneGrowth = Math.pow(1.5, Math.floor(safeLevel / 10))
-  return Math.round(30 * perLevelGrowth * milestoneGrowth)
-}
-
 export interface LegacyCard {
   id: string
   name: string
@@ -235,7 +226,7 @@ export const CARD_POOL: LegacyCard[] = [
 ]
 
 // ---------- Live snapshot for the React HUD ----------
-export type GameStatus = 'menu' | 'playing' | 'levelup' | 'paused' | 'dead'
+export type GameStatus = 'menu' | 'playing' | 'skillselect' | 'paused' | 'dead'
 
 export interface AbilityView {
   id: SkillId
@@ -247,7 +238,7 @@ export interface AbilityView {
   manaCost: number
 }
 
-/** A single option shown in the level-up draft (stat card OR weapon). */
+/** A single option shown in the post-stage skill draft. */
 export interface DraftChoice {
   id: string
   name: string
@@ -263,12 +254,12 @@ export interface HudState {
   maxHp: number
   mana: number
   maxMana: number
-  level: number
-  xp: number
-  xpToNext: number
   time: number
   gold: number
-  wave: number
+  stage: number
+  stageKills: number
+  stageEnemyTotal: number
+  bossStage: boolean
   kills: number
   swordTier: number
   swordStyleName: string
@@ -278,6 +269,5 @@ export interface HudState {
   skills: OwnedSkill[]
   cards: DraftChoice[]
   // filled on death
-  runWave: number
   runKills: number
 }

@@ -43,9 +43,9 @@ export const BIOMES: Record<Biome, Palette> = {
 
 export const BIOME_ORDER: Biome[] = ['dungeon', 'forest', 'snow', 'volcano']
 
-/** Advance to a new region every 3 waves, looping through the biomes. */
-export function biomeForWave(wave: number): Biome {
-  const idx = Math.floor((wave - 1) / 3) % BIOME_ORDER.length
+/** Advance to a new region every 3 stages, looping through the biomes. */
+export function biomeForStage(stage: number): Biome {
+  const idx = Math.floor((stage - 1) / 3) % BIOME_ORDER.length
   return BIOME_ORDER[idx]
 }
 

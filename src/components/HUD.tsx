@@ -3,17 +3,20 @@ import { HudState, SKILLS } from '../game/types'
 export default function HUD({ state, onAbility }: { state: HudState; onAbility: (key: string) => void }) {
   const hpPct = (state.hp / state.maxHp) * 100
   const mpPct = (state.mana / state.maxMana) * 100
-  const xpPct = (state.xp / state.xpToNext) * 100
+  const stagePct = (state.stageKills / state.stageEnemyTotal) * 100
+  const remaining = Math.max(0, state.stageEnemyTotal - state.stageKills)
 
   const mm = Math.floor(state.time / 60)
   const ss = Math.floor(state.time % 60)
 
   return (
     <>
-      {/* full-width XP bar across the very top (Vampire-Survivors style) */}
-      <div className="xp-strip">
-        <div className="xp-strip-fill" style={{ width: `${Math.max(0, Math.min(100, xpPct))}%` }} />
-        <span className="xp-strip-label">LV {state.level}</span>
+      {/* full-width progress for the current finite stage */}
+      <div className={`stage-strip${state.bossStage ? ' stage-strip-boss' : ''}`}>
+        <div className="stage-strip-fill" style={{ width: `${Math.max(0, Math.min(100, stagePct))}%` }} />
+        <span className="stage-strip-label">
+          {state.bossStage ? 'BOSS ' : ''}STAGE {state.stage} · {state.stageKills}/{state.stageEnemyTotal}
+        </span>
       </div>
 
       {/* survival clock */}
@@ -40,7 +43,7 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
 
       {/* top-right run info */}
       <div className="hud-info">
-        <div className="chip">👹 Monster Lv {state.wave}</div>
+        <div className="chip">👹 {remaining} remaining</div>
         <div className="chip">📍 {state.biome}</div>
         <div className="chip">💀 {state.kills}</div>
         <div className="chip">🪙 {state.gold}</div>

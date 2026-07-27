@@ -8,8 +8,9 @@ export function loadMeta(): MetaState {
     if (!raw) return defaultMeta()
     const parsed = JSON.parse(raw) as Partial<MetaState>
     const base = defaultMeta()
+    const legacy = parsed as Partial<MetaState> & { bestWave?: number }
     return {
-      bestWave: parsed.bestWave ?? base.bestWave,
+      bestStage: parsed.bestStage ?? legacy.bestWave ?? base.bestStage,
       totalKills: parsed.totalKills ?? base.totalKills,
       runs: parsed.runs ?? base.runs,
     }
