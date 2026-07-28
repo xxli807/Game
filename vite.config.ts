@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// base is '/Game/' for the GitHub Pages build, '/' for local dev
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/Game/' : '/',
+// Relative asset URLs work both in a local production preview and when the
+// finished bundle is hosted from the /Game/ GitHub Pages subdirectory.
+export default defineConfig({
+  base: './',
   plugins: [react()],
-}))
+})

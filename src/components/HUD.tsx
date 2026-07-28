@@ -26,7 +26,11 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
       <div className="hud-top">
         <div className="vitals">
           <Bar className="hp" pct={hpPct} label={`❤️ ${state.hp}/${state.maxHp}`} />
-          <Bar className="rage" pct={ragePct} label={`🔥 RAGE ${state.rage}/${state.maxRage}`} />
+          <Bar
+            className={state.resourceName === 'Mana' ? 'mana' : 'rage'}
+            pct={ragePct}
+            label={`${state.resourceName === 'Mana' ? '💧' : '🔥'} ${state.resourceName.toUpperCase()} ${state.rage}/${state.maxRage}`}
+          />
         </div>
         <div className="weapons">
           {state.skills.map((skill) => {
@@ -48,7 +52,11 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
         <div className="chip">📍 {state.biome}</div>
         <div className="chip">💀 {state.kills}</div>
         <div className="chip">🪙 {state.gold}</div>
-        <div className="chip chip-sword">{state.swordStyleIcon} {state.swordStyleName} · T{state.swordTier}</div>
+        <div className="chip chip-sword">
+          {state.className === 'Mage'
+            ? `🪄 Arcane Focus · T${state.swordTier}`
+            : `${state.swordStyleIcon} ${state.swordStyleName} · T${state.swordTier}`}
+        </div>
       </div>
 
       {/* ability bar */}

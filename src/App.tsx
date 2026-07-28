@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { GameEngine, WIDTH, HEIGHT } from './game/engine'
-import { baseStats, HudState, MetaState } from './game/types'
+import { baseStats, ClassId, HudState, MetaState } from './game/types'
 import { loadMeta, saveMeta } from './game/meta'
 import HUD from './components/HUD'
 import LevelUpModal from './components/LevelUpModal'
@@ -9,6 +9,7 @@ import MetaScreen from './components/MetaScreen'
 export default function App() {
   const [meta, setMeta] = useState<MetaState>(() => loadMeta())
   const [inRun, setInRun] = useState(false)
+  const [classId, setClassId] = useState<ClassId>('warrior')
 
   const handleStageCleared = (stage: number) => {
     setMeta((m) => {
@@ -35,7 +36,7 @@ export default function App() {
   if (!inRun) {
     return (
       <div className="app">
-        <MetaScreen meta={meta} onStart={() => setInRun(true)} />
+        <MetaScreen meta={meta} classId={classId} onClassChange={setClassId} onStart={() => setInRun(true)} />
       </div>
     )
   }
@@ -43,6 +44,7 @@ export default function App() {
   return (
     <div className="app">
       <GameScreen
+        classId={classId}
         onStageCleared={handleStageCleared}
         onRunEnd={handleRunEnd}
         onExit={() => setInRun(false)}
@@ -52,10 +54,12 @@ export default function App() {
 }
 
 function GameScreen({
+  classId,
   onStageCleared,
   onRunEnd,
   onExit,
 }: {
+  classId: ClassId
   onStageCleared: (stage: number) => void
   onRunEnd: (r: { clearedStage: number; kills: number }) => void
   onExit: () => void
@@ -77,6 +81,7 @@ function GameScreen({
     if (!canvasRef.current) return
     const engine = new GameEngine(canvasRef.current, {
       stats: baseStats(),
+      classId,
       onState: setHud,
       onStageCleared,
       onRunEnd: (r) => {

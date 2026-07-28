@@ -7,9 +7,11 @@ import {
   Rarity,
   SkillId,
   OwnedSkill,
+  ClassId,
+  CLASSES,
   SKILLS,
-  SKILL_SYNERGIES,
-  BASE_SKILL_IDS,
+  classSkillSynergies,
+  classBaseSkillIds,
 } from './types'
 import {
   Biome,
@@ -208,6 +210,7 @@ interface RunEnd {
 
 interface Opts {
   stats: Stats
+  classId: ClassId
   onState: (s: HudState) => void
   onRunEnd: (r: RunEnd) => void
   onStageCleared: (stage: number) => void
@@ -223,6 +226,17 @@ const ACTIVE_CFG: Partial<Record<SkillId, { cd: number; rage: number }>> = {
   'absolute-zero': { cd: 18, rage: 50 },
   tempest: { cd: 14, rage: 55 },
   titanbreaker: { cd: 12, rage: 60 },
+  'mage-cinderbolt': { cd: 0, rage: 18 },
+  'mage-frost-nova': { cd: 0, rage: 24 },
+  'mage-arcane-orbs': { cd: 0, rage: 28 },
+  'mage-blink': { cd: 0, rage: 20 },
+  'mage-ice-barrier': { cd: 0, rage: 32 },
+  'mage-pyroclasm': { cd: 8, rage: 42 },
+  'mage-frozen-tempest': { cd: 10, rage: 45 },
+  'mage-arcane-barrage': { cd: 9, rage: 48 },
+  'mage-prismatic-step': { cd: 7, rage: 35 },
+  'mage-glacial-aegis': { cd: 14, rage: 50 },
+  'mage-elemental-convergence': { cd: 16, rage: 60 },
 }
 
 const KIND_EMOJI: Record<EnemyKind, string> = {
@@ -245,6 +259,7 @@ export class GameEngine {
   private canvas: HTMLCanvasElement
   private opts: Opts
   private stats: Stats
+  private readonly classId: ClassId
 
   private status: GameStatus = 'playing'
   private hero!: Hero
@@ -338,6 +353,7 @@ export class GameEngine {
     this.ctx = canvas.getContext('2d')!
     this.opts = opts
     this.stats = opts.stats
+    this.classId = opts.classId
     this.loadArt()
     this.bindInput()
     this.reset()
@@ -349,19 +365,20 @@ export class GameEngine {
     const load = (file: string) => { const i = new Image(); i.src = `${base}arts/${file}.png`; return i }
     const biomes: Biome[] = ['dungeon', 'forest', 'snow', 'volcano']
     for (const b of biomes) this.tileImgs[b] = load(`tile_${b}`)
-    this.heroImg = load('hero_ashen_turn_1')
+    const heroPrefix = this.classId === 'mage' ? 'hero_mage' : 'hero_ashen'
+    this.heroImg = load(`${heroPrefix}_turn_1`)
     this.heroDir = {
-      down: load('hero_ashen_turn_1'),
-      up: load('hero_ashen_turn_4'),
-      side: load('hero_ashen_turn_3'),
+      down: load(`${heroPrefix}_turn_1`),
+      up: load(`${heroPrefix}_turn_4`),
+      side: load(`${heroPrefix}_turn_3`),
     }
-    this.heroTurn = Array.from({ length: 4 }, (_, index) => load(`hero_ashen_turn_${index + 1}`))
-    this.heroAtk = Array.from({ length: 6 }, (_, index) => load(`hero_ashen_attack_${index + 1}`))
-    this.heroWalkDown = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_s_${index + 1}`))
-    this.heroWalkSide = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_e_${index + 1}`))
-    this.heroWalkUp = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_up_${index + 1}`))
-    this.heroWalkUpRight = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_ne_${index + 1}`))
-    this.heroWalkDownRight = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_se_${index + 1}`))
+    this.heroTurn = Array.from({ length: 4 }, (_, index) => load(`${heroPrefix}_turn_${index + 1}`))
+    this.heroAtk = Array.from({ length: 6 }, (_, index) => load(`${heroPrefix}_attack_${index + 1}`))
+    this.heroWalkDown = Array.from({ length: 8 }, (_, index) => load(`${heroPrefix}_walk_s_${index + 1}`))
+    this.heroWalkSide = Array.from({ length: 8 }, (_, index) => load(`${heroPrefix}_walk_e_${index + 1}`))
+    this.heroWalkUp = Array.from({ length: 8 }, (_, index) => load(`${heroPrefix}_walk_up_${index + 1}`))
+    this.heroWalkUpRight = Array.from({ length: 8 }, (_, index) => load(`${heroPrefix}_walk_ne_${index + 1}`))
+    this.heroWalkDownRight = Array.from({ length: 8 }, (_, index) => load(`${heroPrefix}_walk_se_${index + 1}`))
     const enemyFile: Record<EnemyKind, string> = {
       grunt: 'enemy_goblin',
       fast: 'enemy_cinder_maw',
@@ -395,7 +412,7 @@ export class GameEngine {
       x: WORLD_W * 0.25,
       y: WORLD_H * 0.25,
       hp: this.stats.maxHp,
-      rage: 0,
+      rage: this.classId === 'mage' ? this.stats.maxRage : 0,
       aim: 0,
       attackTimer: 0,
       swingT: 0,
@@ -437,7 +454,7 @@ export class GameEngine {
     // begin every run with one random active skill so the ability bar is lively from the start
     this.skills = []
     this.skillCd = {}
-    const starters: SkillId[] = ['dash', 'whirlwind', 'fireball', 'meteor', 'heal']
+    const starters = classBaseSkillIds(this.classId).filter((id) => SKILLS[id].kind === 'active')
     this.skills.push({ id: starters[Math.floor(Math.random() * starters.length)], level: 1 })
     this.recomputeStats()
     this.heroTurnT = 0
@@ -563,7 +580,7 @@ export class GameEngine {
     this.stageKills = 0
     this.spawnTimer = 0
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
-    this.hero.rage = 0
+    this.hero.rage = this.classId === 'mage' ? this.stats.maxRage : 0
     this.status = 'playing'
     this.lastTs = performance.now()
     if (stage % 10 === 0) {
@@ -908,6 +925,17 @@ export class GameEngine {
       case 'absolute-zero': this.castAbsoluteZero(os.level); break
       case 'tempest': this.castTempest(os.level); break
       case 'titanbreaker': this.castTitanbreaker(os.level); break
+      case 'mage-cinderbolt': this.castMageCinderbolt(os.level); break
+      case 'mage-frost-nova': this.castMageFrostNova(os.level); break
+      case 'mage-arcane-orbs': this.castMageArcaneOrbs(os.level); break
+      case 'mage-blink': this.castMageBlink(os.level); break
+      case 'mage-ice-barrier': this.castMageIceBarrier(os.level); break
+      case 'mage-pyroclasm': this.castMagePyroclasm(os.level); break
+      case 'mage-frozen-tempest': this.castMageFrozenTempest(os.level); break
+      case 'mage-arcane-barrage': this.castMageArcaneBarrage(os.level); break
+      case 'mage-prismatic-step': this.castMagePrismaticStep(os.level); break
+      case 'mage-glacial-aegis': this.castMageGlacialAegis(os.level); break
+      case 'mage-elemental-convergence': this.castMageElementalConvergence(os.level); break
     }
   }
 
@@ -973,6 +1001,17 @@ export class GameEngine {
         s.swordRange += 8 * lvl
         break
       case 'thorns': break
+      case 'mage-arcane-intellect':
+        s.maxRage += 15 * lvl
+        s.manaRegen += 1.5 * lvl
+        break
+      case 'mage-ignite': break
+      case 'mage-shatter': break
+      case 'mage-spell-haste':
+        s.attackInterval *= Math.max(0.65, 1 - 0.06 * lvl)
+        s.moveSpeed *= 1 + 0.04 * lvl
+        break
+      case 'mage-mana-shield': s.maxHp += 25 * lvl; break
       default: break
     }
   }
@@ -1083,6 +1122,121 @@ export class GameEngine {
     this.shake(16)
   }
 
+  // ---- Mage active skills ----
+  private castMageCinderbolt(lvl: number) {
+    if (!this.beginActive('mage-cinderbolt')) return
+    const d = this.aimDir()
+    this.projectiles.push(this.mkProj(this.hero.x, this.hero.y - 8, d.x * 520, d.y * 520, 30 + lvl * 11, true, {
+      r: 10, radius: 55 + lvl * 5, color: '#ff7b32',
+    }))
+  }
+
+  private castMageFrostNova(lvl: number) {
+    if (!this.beginActive('mage-frost-nova')) return
+    this.frostBurst(145 + lvl * 8, 24 + lvl * 9)
+  }
+
+  private castMageArcaneOrbs(lvl: number) {
+    if (!this.beginActive('mage-arcane-orbs')) return
+    this.arcaneVolley(2 + Math.ceil(lvl / 2), 18 + lvl * 7)
+  }
+
+  private castMageBlink(lvl: number) {
+    if (!this.beginActive('mage-blink')) return
+    this.blinkMage(210 + lvl * 20)
+  }
+
+  private castMageIceBarrier(lvl: number) {
+    if (!this.beginActive('mage-ice-barrier')) return
+    this.hero.shieldT = Math.max(this.hero.shieldT, 2.2 + lvl * 0.45)
+    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: 75, life: 0.4, color: 'rgba(125,220,255,0.75)' })
+  }
+
+  private castMagePyroclasm(lvl: number) {
+    if (!this.beginActive('mage-pyroclasm')) return
+    const d = this.aimDir()
+    this.projectiles.push(this.mkProj(this.hero.x, this.hero.y - 8, d.x * 430, d.y * 430, 75 + lvl * 22, true, {
+      r: 16, radius: 120 + lvl * 8, color: '#ff4d21',
+    }))
+    this.floatText(this.hero.x, this.hero.y - 42, 'PYROCLASM', '#ff7b32', 24)
+  }
+
+  private castMageFrozenTempest(lvl: number) {
+    if (!this.beginActive('mage-frozen-tempest')) return
+    this.frostBurst(260, 55 + lvl * 16)
+    for (const e of this.enemies) if (Math.hypot(e.x - this.hero.x, e.y - this.hero.y) < 260 + e.radius) e.slowT = 4 + lvl * 0.4
+    this.floatText(this.hero.x, this.hero.y - 42, 'FROZEN TEMPEST', '#a5e5ff', 22)
+  }
+
+  private castMageArcaneBarrage(lvl: number) {
+    if (!this.beginActive('mage-arcane-barrage')) return
+    this.arcaneVolley(7 + lvl, 28 + lvl * 9)
+    this.floatText(this.hero.x, this.hero.y - 42, 'ARCANE BARRAGE', '#d0a6ff', 22)
+  }
+
+  private castMagePrismaticStep(lvl: number) {
+    if (!this.beginActive('mage-prismatic-step')) return
+    this.blinkMage(330 + lvl * 20)
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2
+      this.projectiles.push(this.mkProj(this.hero.x, this.hero.y, Math.cos(a) * 400, Math.sin(a) * 400, 24 + lvl * 8, true, { pierce: 1, color: '#d0a6ff' }))
+    }
+  }
+
+  private castMageGlacialAegis(lvl: number) {
+    if (!this.beginActive('mage-glacial-aegis')) return
+    this.hero.shieldT = Math.max(this.hero.shieldT, 5 + lvl * 0.6)
+    this.frostBurst(190, 34 + lvl * 10)
+    this.floatText(this.hero.x, this.hero.y - 42, 'GLACIAL AEGIS', '#a5e5ff', 22)
+  }
+
+  private castMageElementalConvergence(lvl: number) {
+    if (!this.beginActive('mage-elemental-convergence')) return
+    const radius = 285
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - this.hero.x, e.y - this.hero.y) < radius + e.radius) {
+        e.slowT = Math.max(e.slowT, 3)
+        this.damageEnemy(e, 95 + lvl * 28, true, true)
+        this.applyBleed(e, 9 + lvl * 4, 4)
+      }
+    }
+    this.arcaneVolley(5 + lvl, 24 + lvl * 8)
+    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: radius, life: 0.7, color: 'rgba(180,110,255,0.75)' })
+    this.floatText(this.hero.x, this.hero.y - 48, 'ELEMENTAL CONVERGENCE', '#f0c6ff', 24)
+    this.shake(16)
+  }
+
+  private frostBurst(radius: number, damage: number) {
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - this.hero.x, e.y - this.hero.y) < radius + e.radius) {
+        this.damageEnemy(e, damage, true, true)
+        e.slowT = Math.max(e.slowT, 2.2)
+        const a = Math.atan2(e.y - this.hero.y, e.x - this.hero.x)
+        e.knock.x += Math.cos(a) * 180
+        e.knock.y += Math.sin(a) * 180
+      }
+    }
+    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: radius, life: 0.45, color: 'rgba(125,220,255,0.7)' })
+  }
+
+  private arcaneVolley(count: number, damage: number) {
+    const base = this.hero.aim
+    for (let i = 0; i < count; i++) {
+      const a = base + (i - (count - 1) / 2) * 0.13
+      this.projectiles.push(this.mkProj(this.hero.x, this.hero.y - 8, Math.cos(a) * 430, Math.sin(a) * 430, damage, true, {
+        r: 8, homing: true, color: '#b06cff',
+      }))
+    }
+  }
+
+  private blinkMage(distance: number) {
+    const d = this.aimDir()
+    this.hero.x = Math.max(22, Math.min(WORLD_W - 22, this.hero.x + d.x * distance))
+    this.hero.y = Math.max(22, Math.min(WORLD_H - 22, this.hero.y + d.y * distance))
+    this.hero.invuln = Math.max(this.hero.invuln, 0.35)
+    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 8, maxR: 60, life: 0.35, color: 'rgba(185,110,255,0.7)' })
+  }
+
   private mkProj(
     x: number, y: number, vx: number, vy: number, damage: number, friendly: boolean,
     opts?: { r?: number; life?: number; radius?: number; pierce?: number; homing?: boolean; spin?: number; color?: string },
@@ -1106,8 +1260,10 @@ export class GameEngine {
     if (e.hp <= 0) return
     let dmg = base
     let crit = false
-    if (Math.random() < this.stats.crit) {
+    const shatter = e.slowT > 0 ? (this.owned('mage-shatter')?.level ?? 0) : 0
+    if (Math.random() < this.stats.crit + shatter * 0.06) {
       dmg *= this.stats.critMult
+      if (shatter > 0) dmg *= 1 + shatter * 0.12
       crit = true
     }
     if (!fromAbility && this.hero.furyT > 0) {
@@ -1125,6 +1281,8 @@ export class GameEngine {
     }
     const deepWounds = this.owned('haste')?.level ?? 0
     if (deepWounds > 0 && (crit || heavy)) this.applyBleed(e, 3 + deepWounds * 2, 3.5)
+    const ignite = this.owned('mage-ignite')?.level ?? 0
+    if (fromAbility && ignite > 0) this.applyBleed(e, 3 + ignite * 2.5, 3.5)
     if (e.hp <= 0) this.killEnemy(e)
   }
 
@@ -1138,13 +1296,15 @@ export class GameEngine {
     e.hp = 0
     this.kills++
     this.stageKills++
-    const baseRage = e.kind === 'boss' ? 35 : e.elite ? 20 : 8
-    const furyLevel = this.owned('power')?.level ?? 0
-    const bleedBonus = e.bleedT > 0 && this.owned('haste') ? 3 : 0
-    const ramRefund = this.owned('blade-dancer') && this.hero.dashT > 0 ? 5 : 0
-    const gainedRage = Math.round(baseRage * (1 + furyLevel * 0.15) + bleedBonus + ramRefund)
-    this.hero.rage = Math.min(this.stats.maxRage, this.hero.rage + gainedRage)
-    this.floatText(e.x, e.y - e.radius - 14, `+${gainedRage} RAGE`, '#ff922b', 14)
+    if (this.classId === 'warrior') {
+      const baseRage = e.kind === 'boss' ? 35 : e.elite ? 20 : 8
+      const furyLevel = this.owned('power')?.level ?? 0
+      const bleedBonus = e.bleedT > 0 && this.owned('haste') ? 3 : 0
+      const ramRefund = this.owned('blade-dancer') && this.hero.dashT > 0 ? 5 : 0
+      const gainedRage = Math.round(baseRage * (1 + furyLevel * 0.15) + bleedBonus + ramRefund)
+      this.hero.rage = Math.min(this.stats.maxRage, this.hero.rage + gainedRage)
+      this.floatText(e.x, e.y - e.radius - 14, `+${gainedRage} RAGE`, '#ff922b', 14)
+    }
     if (e.elite) {
       this.eliteKills++
       this.floatText(e.x, e.y - 10, '★ SPECIAL ★', '#ffd43b', 20)
@@ -1305,7 +1465,7 @@ export class GameEngine {
     const opts: LevelOpt[] = []
 
     // 1) Synergy evolutions — offered when you own BOTH ingredients and not the result yet.
-    for (const syn of SKILL_SYNERGIES) {
+    for (const syn of classSkillSynergies(this.classId)) {
       if (this.owned(syn.result)) continue
       if (!syn.ingredients.every((ingredient) => this.owned(ingredient))) continue
       const def = SKILLS[syn.result]
@@ -1339,7 +1499,7 @@ export class GameEngine {
 
     // 3) Brand-new base skills (only while a slot is free).
     if (this.skills.length < this.MAX_SKILLS) {
-      for (const id of BASE_SKILL_IDS) {
+      for (const id of classBaseSkillIds(this.classId)) {
         if (this.owned(id)) continue
         const def = SKILLS[id]
         opts.push({
@@ -1397,8 +1557,9 @@ export class GameEngine {
     const h = this.hero
     const s = this.stats
 
-    // health regeneration; Rage only comes from kills and never regenerates.
+    // Health always regenerates. Mage Mana also recovers continuously.
     h.hp = Math.min(s.maxHp, h.hp + s.hpRegen * dt)
+    if (this.classId === 'mage') h.rage = Math.min(s.maxRage, h.rage + s.manaRegen * dt)
 
     // cooldowns
     h.dashCd = Math.max(0, h.dashCd - dt)
@@ -1524,14 +1685,15 @@ export class GameEngine {
       }
     }
 
-    // The sword and attack frames stay idle until a monster enters melee range.
-    const attackTarget = this.nearestEnemy(s.swordRange + 50)
+    // Warriors cleave in melee; Mages automatically fire a ranged wand bolt.
+    const attackTarget = this.nearestEnemy(this.classId === 'mage' ? 520 : s.swordRange + 50)
     if (attackTarget) {
       h.attackTimer -= dt
       if (h.attackTimer <= 0) {
         const furyLevel = h.furyT > 0 ? (this.owned('power')?.level ?? 0) : 0
         h.attackTimer = s.attackInterval / (1 + furyLevel * 0.1)
-        this.swordSwing(attackTarget)
+        if (this.classId === 'mage') this.mageWandBolt(attackTarget)
+        else this.swordSwing(attackTarget)
       }
     } else {
       h.attackTimer = 0
@@ -1704,6 +1866,18 @@ export class GameEngine {
       }
       hitCount++
     }
+  }
+
+  private mageWandBolt(target: Enemy) {
+    const h = this.hero
+    const angle = Math.atan2(target.y - h.y, target.x - h.x)
+    this.startSkillAttackAnimation()
+    this.projectiles.push(this.mkProj(
+      h.x, h.y - 10,
+      Math.cos(angle) * 480, Math.sin(angle) * 480,
+      this.stats.swordDamage, true,
+      { r: 6, homing: true, color: '#8ec5ff' },
+    ))
   }
 
   private nearestEnemy(range: number): Enemy | null {
@@ -1976,6 +2150,13 @@ export class GameEngine {
       h.willT = 2.2
       h.rage = Math.min(this.stats.maxRage, h.rage + 5 * unbreakable)
       this.floatText(h.x, h.y - 42, `+${5 * unbreakable} RAGE`, '#ff922b', 16)
+    }
+    const manaShield = this.owned('mage-mana-shield')?.level ?? 0
+    if (manaShield > 0 && h.willCd <= 0 && dmg >= this.stats.maxHp * 0.12) {
+      h.willCd = 5
+      const restored = 4 + manaShield * 3
+      h.rage = Math.min(this.stats.maxRage, h.rage + restored)
+      this.floatText(h.x, h.y - 42, `+${restored} MANA`, '#74c0fc', 16)
     }
     h.hp -= dmg
     if (h.counterT > 0) {
@@ -2930,7 +3111,8 @@ export class GameEngine {
       maxHp: Math.round(s.maxHp),
       rage: Math.round(h.rage),
       maxRage: Math.round(s.maxRage),
-      className: 'Warrior',
+      className: CLASSES[this.classId].name,
+      resourceName: CLASSES[this.classId].resourceName,
       time: this.survTime,
       gold: this.gold,
       stage: this.stage,
