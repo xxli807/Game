@@ -2,7 +2,7 @@ import { HudState, SKILLS } from '../game/types'
 
 export default function HUD({ state, onAbility }: { state: HudState; onAbility: (key: string) => void }) {
   const hpPct = (state.hp / state.maxHp) * 100
-  const mpPct = (state.mana / state.maxMana) * 100
+  const ragePct = (state.rage / state.maxRage) * 100
   const stagePct = (state.stageKills / state.stageEnemyTotal) * 100
   const remaining = Math.max(0, state.stageEnemyTotal - state.stageKills)
 
@@ -26,7 +26,7 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
       <div className="hud-top">
         <div className="vitals">
           <Bar className="hp" pct={hpPct} label={`❤️ ${state.hp}/${state.maxHp}`} />
-          <Bar className="mp" pct={mpPct} label={`🔵 ${state.mana}/${state.maxMana}`} />
+          <Bar className="rage" pct={ragePct} label={`🔥 RAGE ${state.rage}/${state.maxRage}`} />
         </div>
         <div className="weapons">
           {state.skills.map((skill) => {
@@ -43,6 +43,7 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
 
       {/* top-right run info */}
       <div className="hud-info">
+        <div className="chip">⚔️ {state.className}</div>
         <div className="chip">👹 {remaining} remaining</div>
         <div className="chip">📍 {state.biome}</div>
         <div className="chip">💀 {state.kills}</div>
@@ -58,14 +59,14 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
           return (
             <button
               key={a.key}
-              className={`ability ${ready ? 'ready' : ''}`}
+              className={`ability ${ready ? 'ready' : ''}${state.rage < a.rageCost ? ' unaffordable' : ''}`}
               onPointerDown={(e) => { e.preventDefault(); onAbility(a.key) }}
             >
               <div className="ability-icon">{a.icon}</div>
               {!ready && <div className="ability-cd" style={{ height: `${pct}%` }} />}
               {!ready && <div className="ability-cd-text">{a.cdLeft.toFixed(1)}</div>}
               <div className="ability-key">{a.key}</div>
-              <div className="ability-mana">{a.manaCost}</div>
+              <div className="ability-rage">{a.rageCost}</div>
             </button>
           )
         })}

@@ -208,7 +208,7 @@ body {
 }
 
 .stat-fill.hp { background: linear-gradient(90deg, #ff6b6b, #ff8787); }
-.stat-fill.mp { background: linear-gradient(90deg, #4dabf7, #74c0fc); }
+.stat-fill.rage { background: linear-gradient(90deg, #c92a2a, #ff922b); }
 
 .stat-label {
   position: absolute;
@@ -322,13 +322,18 @@ body {
   opacity: 0.75;
 }
 
-.ability-mana {
+.ability-rage {
   position: absolute;
   bottom: 2px;
   right: 4px;
   font-size: 10px;
   font-weight: bold;
-  color: #74c0fc;
+  color: #ff922b;
+}
+
+.ability.unaffordable {
+  filter: saturate(0.45);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 /* ---------------- Overlays ---------------- */

@@ -56,7 +56,7 @@ interface Hero {
   x: number
   y: number
   hp: number
-  mana: number
+  rage: number
   aim: number // facing angle
   attackTimer: number
   swingT: number // slash animation timer
@@ -70,6 +70,11 @@ interface Hero {
   ultCd: number
   healCd: number
   shieldT: number // active damage shield
+  counterT: number
+  lastStandT: number
+  furyT: number
+  willT: number
+  willCd: number
   dashT: number // active dash timer
   dashDir: Vec
   dashHits: Set<Enemy>
@@ -102,6 +107,9 @@ interface Enemy {
   ebiome: Biome // which region it belongs to (drives its look)
   slowT: number // frost slow timer
   wCd: number // weapon damage tick cooldown (orbit/aura)
+  bleedT: number
+  bleedDps: number
+  bleedTick: number
 }
 
 interface Decoration {
@@ -207,18 +215,14 @@ interface Opts {
 
 // Ability-bar slots, in the order owned active skills fill them.
 const ABILITY_KEYS = ['Q', 'E', 'SPC', 'R', 'F'] as const
-// Cooldown (s) / mana for active skills that aren't backed by Stats fields.
-const ACTIVE_CFG: Partial<Record<SkillId, { cd: number; mana: number }>> = {
-  'frost-nova': { cd: 7, mana: 30 },
-  'chain-lightning': { cd: 5, mana: 25 },
-  'blade-storm': { cd: 6, mana: 30 },
-  'holy-beam': { cd: 4, mana: 22 },
-  'time-warp': { cd: 18, mana: 55 },
-  inferno: { cd: 8, mana: 45 },
-  'blade-dancer': { cd: 7, mana: 40 },
-  'guardian-angel': { cd: 16, mana: 55 },
-  'absolute-zero': { cd: 20, mana: 55 },
-  tempest: { cd: 12, mana: 50 },
+// Cooldown (s) / Rage for evolved Warrior skills.
+const ACTIVE_CFG: Partial<Record<SkillId, { cd: number; rage: number }>> = {
+  inferno: { cd: 8, rage: 40 },
+  'blade-dancer': { cd: 7, rage: 35 },
+  'guardian-angel': { cd: 9, rage: 45 },
+  'absolute-zero': { cd: 18, rage: 50 },
+  tempest: { cd: 14, rage: 55 },
+  titanbreaker: { cd: 12, rage: 60 },
 }
 
 const KIND_EMOJI: Record<EnemyKind, string> = {
@@ -391,7 +395,7 @@ export class GameEngine {
       x: WORLD_W * 0.25,
       y: WORLD_H * 0.25,
       hp: this.stats.maxHp,
-      mana: this.stats.maxMana,
+      rage: 0,
       aim: 0,
       attackTimer: 0,
       swingT: 0,
@@ -405,6 +409,11 @@ export class GameEngine {
       ultCd: 0,
       healCd: 0,
       shieldT: 0,
+      counterT: 0,
+      lastStandT: 0,
+      furyT: 0,
+      willT: 0,
+      willCd: 0,
       dashT: 0,
       dashDir: { x: 1, y: 0 },
       dashHits: new Set(),
@@ -428,7 +437,7 @@ export class GameEngine {
     // begin every run with one random active skill so the ability bar is lively from the start
     this.skills = []
     this.skillCd = {}
-    const starters: SkillId[] = ['fireball', 'dash', 'whirlwind']
+    const starters: SkillId[] = ['dash', 'whirlwind', 'fireball', 'meteor', 'heal']
     this.skills.push({ id: starters[Math.floor(Math.random() * starters.length)], level: 1 })
     this.recomputeStats()
     this.heroTurnT = 0
@@ -554,6 +563,7 @@ export class GameEngine {
     this.stageKills = 0
     this.spawnTimer = 0
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
+    this.hero.rage = 0
     this.status = 'playing'
     this.lastTs = performance.now()
     if (stage % 10 === 0) {
@@ -570,7 +580,6 @@ export class GameEngine {
     this.enemies = []
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
     this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + this.stats.maxHp * 0.12)
-    this.hero.mana = Math.min(this.stats.maxMana, this.hero.mana + this.stats.maxMana * 0.2)
     this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${this.stage} CLEARED!`, '#69db7c', 30)
     this.opts.onStageCleared(this.stage)
     this.buildChoices()
@@ -614,8 +623,10 @@ export class GameEngine {
     this.canvas.addEventListener('pointerdown', (e) => {
       if (e.pointerType !== 'mouse') return
       toWorld(e.clientX, e.clientY)
-      if (e.button === 0) this.castFire()
-      if (e.button === 2) this.castDash()
+      const leap = this.owned('fireball')
+      const rush = this.owned('dash')
+      if (e.button === 0 && leap) this.castFire(leap.level)
+      if (e.button === 2 && rush) this.castDash(rush.level)
     })
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
@@ -751,6 +762,9 @@ export class GameEngine {
       ebiome: regionAt(x, y),
       slowT: 0,
       wCd: 0,
+      bleedT: 0,
+      bleedDps: 0,
+      bleedTick: 0,
     })
   }
 
@@ -765,18 +779,20 @@ export class GameEngine {
   }
 
   // ---------- abilities ----------
-  private spendMana(cost: number): boolean {
-    if (this.hero.mana < cost) return false
-    this.hero.mana -= cost
+  private spendRage(cost: number): boolean {
+    if (this.hero.rage < cost) return false
+    this.hero.rage -= cost
+    const fury = this.owned('power')?.level ?? 0
+    if (fury > 0) this.hero.furyT = 2.5 + fury * 0.3
     return true
   }
 
-  private castDash() {
+  private castDash(lvl: number) {
     if (this.status !== 'playing') return
     const h = this.hero
     if (h.dashCd > 0) return
-    if (!this.spendMana(this.stats.dashMana)) return
-    h.dashCd = this.stats.dashCd
+    if (!this.spendRage(this.stats.dashRage)) return
+    h.dashCd = this.stats.dashCd * Math.max(0.6, 1 - (lvl - 1) * 0.08)
     this.startSkillAttackAnimation()
     h.dashT = 0.16
     h.invuln = 0.16
@@ -785,19 +801,23 @@ export class GameEngine {
     h.dashHits = new Set()
   }
 
-  private castWhirl() {
+  private castWhirl(lvl: number) {
     if (this.status !== 'playing') return
     const h = this.hero
     if (h.whirlCd > 0) return
-    if (!this.spendMana(this.stats.whirlMana)) return
-    h.whirlCd = this.stats.whirlCd
+    if (!this.spendRage(this.stats.whirlRage)) return
+    h.whirlCd = this.stats.whirlCd * Math.max(0.6, 1 - (lvl - 1) * 0.08)
     this.startSkillAttackAnimation()
     const R = this.stats.whirlRadius
+    const facing = h.aim
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: R, life: 0.35, color: 'rgba(120,220,255,0.6)' })
     for (const e of this.enemies) {
       const d = Math.hypot(e.x - h.x, e.y - h.y)
-      if (d < R + e.radius) {
-        this.damageEnemy(e, this.stats.whirlDamage, true)
+      const angle = Math.atan2(e.y - h.y, e.x - h.x)
+      let diff = Math.abs(angle - facing)
+      if (diff > Math.PI) diff = Math.PI * 2 - diff
+      if (d < R + e.radius && diff < Math.PI * 0.55) {
+        this.damageEnemy(e, this.stats.whirlDamage * (1 + (lvl - 1) * 0.22) * (diff < 0.22 ? 1.6 : 1), true, true)
         const a = Math.atan2(e.y - h.y, e.x - h.x)
         e.knock.x += Math.cos(a) * 260
         e.knock.y += Math.sin(a) * 260
@@ -806,65 +826,67 @@ export class GameEngine {
     this.shake(8)
   }
 
-  private castFire() {
+  private castFire(lvl: number) {
     if (this.status !== 'playing') return
     const h = this.hero
     if (h.fireCd > 0) return
-    if (!this.spendMana(this.stats.fireMana)) return
-    h.fireCd = this.stats.fireCd
+    if (!this.spendRage(this.stats.fireRage)) return
+    h.fireCd = this.stats.fireCd * Math.max(0.6, 1 - (lvl - 1) * 0.08)
     this.startSkillAttackAnimation()
-    const baseA = this.hero.aim
-    const n = this.stats.fireCount
-    const spread = 0.18
-    for (let i = 0; i < n; i++) {
-      const a = baseA + (i - (n - 1) / 2) * spread
-      this.projectiles.push(this.mkProj(
-        h.x + Math.cos(a) * 24, h.y + Math.sin(a) * 24,
-        Math.cos(a) * 560, Math.sin(a) * 560,
-        this.stats.fireDamage, true,
-        { r: 9, life: 1.4, radius: this.stats.fireRadius },
-      ))
+    const dx = this.mouse.x - h.x
+    const dy = this.mouse.y - h.y
+    const distance = Math.hypot(dx, dy) || 1
+    const travel = Math.min(300, distance)
+    h.x += (dx / distance) * travel
+    h.y += (dy / distance) * travel
+    h.invuln = Math.max(h.invuln, 0.35)
+    const radius = this.stats.fireRadius
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - h.x, e.y - h.y) < radius + e.radius) {
+        this.damageEnemy(e, this.stats.fireDamage * (1 + (lvl - 1) * 0.24), true, true)
+        e.knock.x += (e.x - h.x) * 3
+        e.knock.y += (e.y - h.y) * 3
+      }
     }
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: radius, life: 0.4, color: 'rgba(210,170,110,0.75)' })
+    this.floatText(h.x, h.y - 45, 'SEISMIC LEAP', '#ffd08a', 22)
+    this.shake(9)
   }
 
   // R — Meteor Storm: rain fiery meteors around the cursor
-  private castUlt() {
+  private castUlt(lvl: number) {
     if (this.status !== 'playing') return
     const h = this.hero
     if (h.ultCd > 0) return
-    if (!this.spendMana(this.stats.ultMana)) return
-    h.ultCd = this.stats.ultCd
+    if (!this.spendRage(this.stats.ultRage)) return
+    h.ultCd = this.stats.ultCd * Math.max(0.65, 1 - (lvl - 1) * 0.07)
     this.startSkillAttackAnimation()
-    const n = this.stats.ultMeteors
-    const spread = this.stats.ultRadius
-    const cx = this.mouse.x
-    const cy = this.mouse.y
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2
-      const r = Math.sqrt(Math.random()) * spread
-      this.meteors.push({
-        x: cx + Math.cos(a) * r,
-        y: cy + Math.sin(a) * r,
-        t: 0.35 + Math.random() * 0.9,
-        damage: this.stats.ultDamage,
-        radius: 70,
-      })
+    let affected = 0
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - h.x, e.y - h.y) < this.stats.ultRadius + e.radius) {
+        affected++
+        e.slowT = Math.max(e.slowT, 2)
+      }
     }
-    this.floatText(cx, cy - spread - 10, '☄️ METEOR STORM', '#ff922b', 26)
+    h.shieldT = Math.max(h.shieldT, this.stats.shieldTime + lvl * 0.25 + affected * 0.18)
+    h.invuln = Math.max(h.invuln, 0.35)
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: this.stats.ultRadius, life: 0.45, color: 'rgba(255,185,90,0.7)' })
+    this.floatText(h.x, h.y - 45, `CHALLENGING ROAR · ${affected}`, '#ffb45f', 22)
+    this.shake(8)
   }
 
   // F — Battle Heal: restore health and gain a brief shield
-  private castHeal() {
+  private castHeal(lvl: number) {
     if (this.status !== 'playing') return
     const h = this.hero
     if (h.healCd > 0) return
-    if (!this.spendMana(this.stats.healMana)) return
-    h.healCd = this.stats.healCd
+    if (!this.spendRage(this.stats.healRage)) return
+    h.healCd = this.stats.healCd * Math.max(0.65, 1 - (lvl - 1) * 0.07)
     this.startSkillAttackAnimation()
-    h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.healAmount)
-    h.shieldT = this.stats.shieldTime
-    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 60, life: 0.35, color: 'rgba(120,255,170,0.7)' })
-    this.floatText(h.x, h.y - 34, `+${Math.round(this.stats.healAmount)}`, '#69db7c', 22)
+    h.counterT = 2.2 + lvl * 0.25
+    h.invuln = Math.max(h.invuln, 0.15)
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 70, life: 0.35, color: 'rgba(210,55,65,0.7)' })
+    this.floatText(h.x, h.y - 34, 'BLOOD REPRISAL', '#ff6b6b', 22)
   }
 
   // ---------- skill system ----------
@@ -875,30 +897,26 @@ export class GameEngine {
   private activateSkill(os: OwnedSkill) {
     if (this.status !== 'playing') return
     switch (os.id) {
-      case 'dash': this.castDash(); break
-      case 'whirlwind': this.castWhirl(); break
-      case 'fireball': this.castFire(); break
-      case 'meteor': this.castUlt(); break
-      case 'heal': this.castHeal(); break
-      case 'frost-nova': this.castFrostNova(os.level); break
-      case 'chain-lightning': this.skillChainLightning(os.level); break
-      case 'blade-storm': this.castBladeStorm(os.level); break
-      case 'holy-beam': this.castHolyBeam(os.level); break
-      case 'time-warp': this.castTimeWarp(os.level); break
+      case 'dash': this.castDash(os.level); break
+      case 'whirlwind': this.castWhirl(os.level); break
+      case 'fireball': this.castFire(os.level); break
+      case 'meteor': this.castUlt(os.level); break
+      case 'heal': this.castHeal(os.level); break
       case 'inferno': this.castInferno(os.level); break
       case 'blade-dancer': this.castBladeDancer(os.level); break
       case 'guardian-angel': this.castGuardianAngel(os.level); break
       case 'absolute-zero': this.castAbsoluteZero(os.level); break
       case 'tempest': this.castTempest(os.level); break
+      case 'titanbreaker': this.castTitanbreaker(os.level); break
     }
   }
 
-  /** Cooldown/mana gate for the actives not backed by Stats fields. */
+  /** Cooldown/Rage gate for evolved active skills. */
   private beginActive(id: SkillId): boolean {
     if ((this.skillCd[id] ?? 0) > 0) return false
     const cfg = ACTIVE_CFG[id]
     if (!cfg) return false
-    if (!this.spendMana(cfg.mana)) return false
+    if (!this.spendRage(cfg.rage)) return false
     this.skillCd[id] = cfg.cd
     this.startSkillAttackAnimation()
     return true
@@ -914,24 +932,26 @@ export class GameEngine {
     h.skillAttackT = h.swingT
   }
 
-  private cdInfo(os: OwnedSkill): { cdLeft: number; cdMax: number; manaCost: number } {
+  private cdInfo(os: OwnedSkill): { cdLeft: number; cdMax: number; rageCost: number } {
     const h = this.hero, s = this.stats
+    const commonScale = Math.max(0.6, 1 - (os.level - 1) * 0.08)
+    const rareScale = Math.max(0.65, 1 - (os.level - 1) * 0.07)
     switch (os.id) {
-      case 'dash': return { cdLeft: h.dashCd, cdMax: s.dashCd, manaCost: s.dashMana }
-      case 'whirlwind': return { cdLeft: h.whirlCd, cdMax: s.whirlCd, manaCost: s.whirlMana }
-      case 'fireball': return { cdLeft: h.fireCd, cdMax: s.fireCd, manaCost: s.fireMana }
-      case 'meteor': return { cdLeft: h.ultCd, cdMax: s.ultCd, manaCost: s.ultMana }
-      case 'heal': return { cdLeft: h.healCd, cdMax: s.healCd, manaCost: s.healMana }
+      case 'dash': return { cdLeft: h.dashCd, cdMax: s.dashCd * commonScale, rageCost: s.dashRage }
+      case 'whirlwind': return { cdLeft: h.whirlCd, cdMax: s.whirlCd * commonScale, rageCost: s.whirlRage }
+      case 'fireball': return { cdLeft: h.fireCd, cdMax: s.fireCd * commonScale, rageCost: s.fireRage }
+      case 'meteor': return { cdLeft: h.ultCd, cdMax: s.ultCd * rareScale, rageCost: s.ultRage }
+      case 'heal': return { cdLeft: h.healCd, cdMax: s.healCd * rareScale, rageCost: s.healRage }
       default: {
         const cfg = ACTIVE_CFG[os.id]
-        return { cdLeft: this.skillCd[os.id] ?? 0, cdMax: cfg?.cd ?? 0, manaCost: cfg?.mana ?? 0 }
+        return { cdLeft: this.skillCd[os.id] ?? 0, cdMax: cfg?.cd ?? 0, rageCost: cfg?.rage ?? 0 }
       }
     }
   }
 
   /** Rebuild live Stats from the base loadout + every owned passive skill. */
   private recomputeStats() {
-    const prevHp = this.stats.maxHp, prevMana = this.stats.maxMana
+    const prevHp = this.stats.maxHp
     const s: Stats = { ...this.opts.stats }
     for (const os of this.skills) {
       if (SKILLS[os.id].kind === 'passive') this.applyPassive(s, os.id, os.level)
@@ -939,172 +959,128 @@ export class GameEngine {
     this.stats = s
     if (this.hero) {
       if (s.maxHp > prevHp) this.hero.hp = Math.min(s.maxHp, this.hero.hp + (s.maxHp - prevHp))
-      if (s.maxMana > prevMana) this.hero.mana = Math.min(s.maxMana, this.hero.mana + (s.maxMana - prevMana))
     }
   }
 
   private applyPassive(s: Stats, id: SkillId, lvl: number) {
     switch (id) {
-      case 'power': s.swordDamage *= 1 + 0.25 * lvl; break
-      case 'haste': s.attackInterval /= 1 + 0.15 * lvl; break
+      case 'power': s.swordDamage *= 1 + 0.08 * lvl; break
+      case 'haste': break
       case 'vitality': s.maxHp += 45 * lvl; break
-      case 'regeneration': s.hpRegen += 3 * lvl; break
-      case 'focus': s.maxMana += 25 * lvl; s.manaRegen += 3 * lvl; break
-      case 'swiftness': s.moveSpeed *= 1 + 0.12 * lvl; break
-      case 'precision': s.crit += 0.1 * lvl; break
-      case 'vampirism': s.lifesteal += 0.05 * lvl; break
-      case 'magnetism': s.pickupRadius *= 1 + 0.5 * lvl; break
-      case 'thorns': s.thorns += 0.25 * lvl; break
+      case 'precision':
+        s.swordDamage *= 1 + 0.12 * lvl
+        s.critMult += 0.15 * lvl
+        s.swordRange += 8 * lvl
+        break
+      case 'thorns': break
       default: break
     }
   }
 
-  // ---- extra active skill effects ----
-  private castFrostNova(lvl: number) {
-    if (!this.beginActive('frost-nova')) return
-    const h = this.hero
-    const R = 150 + lvl * 12, dmg = 26 + lvl * 12
-    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: R, life: 0.4, color: 'rgba(140,220,255,0.7)' })
-    for (const e of this.enemies) {
-      if (Math.hypot(e.x - h.x, e.y - h.y) < R + e.radius) {
-        this.damageEnemy(e, dmg, true)
-        e.slowT = Math.max(e.slowT, 2.5)
-      }
-    }
-    this.freezeT = Math.max(this.freezeT, 0.5)
-    this.floatText(h.x, h.y - 40, '❄️ FROST NOVA', '#8cd6ff', 22)
-    this.shake(6)
-  }
-
-  private chainZap(startX: number, startY: number, jumps: number, dmg: number, range: number, life: number) {
-    let fx = startX, fy = startY
-    const hit = new Set<Enemy>()
-    for (let i = 0; i < jumps; i++) {
-      let best: Enemy | null = null, bd = range * range
-      for (const e of this.enemies) {
-        if (hit.has(e)) continue
-        const d = (e.x - fx) ** 2 + (e.y - fy) ** 2
-        if (d < bd) { bd = d; best = e }
-      }
-      if (!best) break
-      this.bolts.push({ x1: fx, y1: fy, x2: best.x, y2: best.y, life })
-      this.damageEnemy(best, dmg, true)
-      hit.add(best); fx = best.x; fy = best.y
-    }
-  }
-
-  private skillChainLightning(lvl: number) {
-    if (!this.beginActive('chain-lightning')) return
-    this.chainZap(this.hero.x, this.hero.y, 3 + lvl, 24 + lvl * 10, 320, 0.18)
-    this.floatText(this.hero.x, this.hero.y - 40, '⚡ CHAIN LIGHTNING', '#ffe066', 20)
-  }
-
-  private castBladeStorm(lvl: number) {
-    if (!this.beginActive('blade-storm')) return
-    const h = this.hero
-    const n = 8 + lvl * 2, dmg = 20 + lvl * 8
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2
-      this.projectiles.push(this.mkProj(
-        h.x + Math.cos(a) * 20, h.y + Math.sin(a) * 20,
-        Math.cos(a) * 460, Math.sin(a) * 460, dmg, true,
-        { r: 8, life: 0.9, pierce: 3, spin: 18, color: '#e9d8ff' },
-      ))
-    }
-    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 70, life: 0.3, color: 'rgba(200,170,255,0.6)' })
-    this.floatText(h.x, h.y - 40, '🗡️ BLADE STORM', '#d0bcff', 22)
-  }
-
-  private castHolyBeam(lvl: number) {
-    if (!this.beginActive('holy-beam')) return
-    const h = this.hero
-    const t = this.nearestEnemy(700), dmg = 55 + lvl * 22
-    if (t) {
-      this.bolts.push({ x1: h.x, y1: h.y, x2: t.x, y2: t.y, life: 0.22 })
-      this.damageEnemy(t, dmg, true)
-      for (const e of this.enemies) {
-        if (e !== t && Math.hypot(e.x - t.x, e.y - t.y) < 60) this.damageEnemy(e, dmg * 0.5, true)
-      }
-      this.rings.push({ x: t.x, y: t.y, r: 6, maxR: 55, life: 0.3, color: 'rgba(255,240,170,0.8)' })
-    }
-    this.floatText(h.x, h.y - 40, '🌟 HOLY BEAM', '#ffe89e', 22)
-  }
-
-  private castTimeWarp(lvl: number) {
-    if (!this.beginActive('time-warp')) return
-    this.freezeT = Math.max(this.freezeT, 2.5 + lvl * 0.3)
-    this.projectiles = this.projectiles.filter((p) => p.friendly)
-    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: 240, life: 0.5, color: 'rgba(180,200,255,0.5)' })
-    this.floatText(this.hero.x, this.hero.y - 40, '⏳ TIME WARP', '#b0c4ff', 24)
-    this.shake(8)
-  }
-
+  // ---- evolved Warrior active skills ----
   private castInferno(lvl: number) {
     if (!this.beginActive('inferno')) return
-    const h = this.hero, baseA = h.aim, n = 4 + lvl
-    for (let i = 0; i < n; i++) {
-      const a = baseA + (i - (n - 1) / 2) * 0.22
-      this.projectiles.push(this.mkProj(
-        h.x + Math.cos(a) * 24, h.y + Math.sin(a) * 24,
-        Math.cos(a) * 540, Math.sin(a) * 540, 40 + lvl * 12, true,
-        { r: 10, life: 1.4, radius: 62 },
-      ))
+    const h = this.hero
+    h.dashT = 0.55
+    h.invuln = 0.8
+    h.dashDir = this.aimDir()
+    h.dashHits = new Set()
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - h.x, e.y - h.y) < 170 + e.radius) {
+        this.damageEnemy(e, 42 + lvl * 14, true, true)
+      }
     }
-    const cx = this.mouse.x, cy = this.mouse.y
-    for (let i = 0; i < 4 + lvl; i++) {
-      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 150
-      this.meteors.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, t: 0.3 + Math.random() * 0.8, damage: 70 + lvl * 20, radius: 74 })
-    }
-    this.floatText(h.x, h.y - 44, '🌋 INFERNO', '#ff6b3d', 26)
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 170, life: 0.55, color: 'rgba(255,205,90,0.7)' })
+    this.floatText(h.x, h.y - 44, 'BLADESTORM CHARGE', '#ffd866', 24)
     this.shake(10)
   }
 
   private castBladeDancer(lvl: number) {
     if (!this.beginActive('blade-dancer')) return
     const h = this.hero
-    h.dashT = 0.4; h.invuln = 0.7; h.dashDir = this.aimDir(); h.dashHits = new Set()
-    const R = 150
+    h.dashT = 0.65
+    h.invuln = 0.9
+    h.dashDir = this.aimDir()
+    h.dashHits = new Set()
+    const R = 125
     for (const e of this.enemies) {
       if (Math.hypot(e.x - h.x, e.y - h.y) < R + e.radius) {
-        this.damageEnemy(e, 34 + lvl * 12, true)
+        this.damageEnemy(e, 38 + lvl * 13, true, true)
         const a = Math.atan2(e.y - h.y, e.x - h.x)
-        e.knock.x += Math.cos(a) * 300; e.knock.y += Math.sin(a) * 300
+        e.knock.x += Math.cos(a) * 520
+        e.knock.y += Math.sin(a) * 520
       }
     }
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: R, life: 0.4, color: 'rgba(255,220,120,0.6)' })
-    this.floatText(h.x, h.y - 44, '⚔️ BLADE DANCER', '#ffd866', 24)
+    this.floatText(h.x, h.y - 44, 'LIVING BATTERING RAM', '#ffd866', 22)
     this.shake(8)
   }
 
   private castGuardianAngel(lvl: number) {
     if (!this.beginActive('guardian-angel')) return
     const h = this.hero
-    h.hp = this.stats.maxHp
-    h.shieldT = 3 + lvl
-    h.invuln = Math.max(h.invuln, 0.5)
-    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 80, life: 0.5, color: 'rgba(150,255,190,0.7)' })
-    this.floatText(h.x, h.y - 44, '🪽 GUARDIAN ANGEL', '#b2f2bb', 24)
+    const dir = this.aimDir()
+    h.x += dir.x * 320
+    h.y += dir.y * 320
+    h.invuln = Math.max(h.invuln, 0.45)
+    const radius = 175
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - h.x, e.y - h.y) < radius + e.radius) {
+        this.damageEnemy(e, 58 + lvl * 18, true, true)
+        this.applyBleed(e, 10 + lvl * 4, 4)
+      }
+    }
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: radius, life: 0.55, color: 'rgba(185,35,45,0.7)' })
+    this.floatText(h.x, h.y - 44, 'CRIMSON EARTHSHATTER', '#ff6b6b', 22)
+    this.shake(12)
   }
 
   private castAbsoluteZero(lvl: number) {
     if (!this.beginActive('absolute-zero')) return
     const h = this.hero
-    this.freezeT = Math.max(this.freezeT, 3.5 + lvl * 0.4)
-    this.projectiles = this.projectiles.filter((p) => p.friendly)
-    const dmg = 60 + lvl * 25
-    for (const e of this.enemies) {
-      if (Math.hypot(e.x - h.x, e.y - h.y) < 520) { this.damageEnemy(e, dmg, true); e.slowT = Math.max(e.slowT, 4) }
-    }
-    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 520, life: 0.6, color: 'rgba(160,220,255,0.5)' })
-    this.floatText(h.x, h.y - 44, '🧊 ABSOLUTE ZERO', '#a5e8ff', 26)
+    h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * (0.3 + lvl * 0.05))
+    h.shieldT = 3 + lvl * 0.4
+    h.lastStandT = 5 + lvl
+    h.invuln = Math.max(h.invuln, 0.4)
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 230, life: 0.6, color: 'rgba(255,180,90,0.65)' })
+    this.floatText(h.x, h.y - 44, 'LAST STAND', '#ffc078', 26)
     this.shake(12)
   }
 
   private castTempest(lvl: number) {
     if (!this.beginActive('tempest')) return
-    this.chainZap(this.hero.x, this.hero.y, 8 + lvl * 2, 45 + lvl * 18, 360, 0.2)
-    this.floatText(this.hero.x, this.hero.y - 44, '🌩️ TEMPEST', '#d0bfff', 26)
+    const h = this.hero
+    h.counterT = 4 + lvl * 0.5
+    h.furyT = h.counterT
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 130, life: 0.5, color: 'rgba(230,55,55,0.7)' })
+    this.floatText(h.x, h.y - 44, "BERSERKER'S RECKONING", '#ff6b6b', 22)
     this.shake(10)
+  }
+
+  private castTitanbreaker(lvl: number) {
+    if (!this.beginActive('titanbreaker')) return
+    const h = this.hero
+    const dir = this.aimDir()
+    h.x += dir.x * 330
+    h.y += dir.y * 330
+    h.invuln = Math.max(h.invuln, 0.5)
+    const damage = 85 + lvl * 25
+    for (const e of this.enemies) {
+      const dx = e.x - h.x
+      const dy = e.y - h.y
+      const distance = Math.hypot(dx, dy)
+      const forward = (dx * dir.x + dy * dir.y)
+      const lateral = Math.abs(dx * dir.y - dy * dir.x)
+      if (distance < 150 + e.radius || (forward > 0 && forward < 420 && lateral < 85 + e.radius)) {
+        const centerHit = distance < 90 + e.radius
+        this.damageEnemy(e, damage * (centerHit ? 1.8 : 1), true, true)
+        e.knock.x += dir.x * 420
+        e.knock.y += dir.y * 420
+      }
+    }
+    this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 170, life: 0.5, color: 'rgba(255,210,105,0.75)' })
+    this.floatText(h.x, h.y - 48, 'TITANBREAKER', '#ffe066', 28)
+    this.shake(16)
   }
 
   private mkProj(
@@ -1126,13 +1102,16 @@ export class GameEngine {
   }
 
   // ---------- damage helpers ----------
-  private damageEnemy(e: Enemy, base: number, fromAbility: boolean) {
+  private damageEnemy(e: Enemy, base: number, fromAbility: boolean, heavy = false) {
     if (e.hp <= 0) return
     let dmg = base
     let crit = false
     if (Math.random() < this.stats.crit) {
       dmg *= this.stats.critMult
       crit = true
+    }
+    if (!fromAbility && this.hero.furyT > 0) {
+      dmg *= 1 + 0.08 * (this.owned('power')?.level ?? 0)
     }
     e.hp -= dmg
     e.hitFlash = 0.1
@@ -1144,13 +1123,28 @@ export class GameEngine {
     } else if (this.stats.lifesteal > 0 && fromAbility) {
       this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + dmg * this.stats.lifesteal * 0.5)
     }
+    const deepWounds = this.owned('haste')?.level ?? 0
+    if (deepWounds > 0 && (crit || heavy)) this.applyBleed(e, 3 + deepWounds * 2, 3.5)
     if (e.hp <= 0) this.killEnemy(e)
+  }
+
+  private applyBleed(e: Enemy, dps: number, duration: number) {
+    e.bleedDps = Math.max(e.bleedDps, dps)
+    e.bleedT = Math.max(e.bleedT, duration)
+    e.bleedTick = Math.min(e.bleedTick, 0.25)
   }
 
   private killEnemy(e: Enemy) {
     e.hp = 0
     this.kills++
     this.stageKills++
+    const baseRage = e.kind === 'boss' ? 35 : e.elite ? 20 : 8
+    const furyLevel = this.owned('power')?.level ?? 0
+    const bleedBonus = e.bleedT > 0 && this.owned('haste') ? 3 : 0
+    const ramRefund = this.owned('blade-dancer') && this.hero.dashT > 0 ? 5 : 0
+    const gainedRage = Math.round(baseRage * (1 + furyLevel * 0.15) + bleedBonus + ramRefund)
+    this.hero.rage = Math.min(this.stats.maxRage, this.hero.rage + gainedRage)
+    this.floatText(e.x, e.y - e.radius - 14, `+${gainedRage} RAGE`, '#ff922b', 14)
     if (e.elite) {
       this.eliteKills++
       this.floatText(e.x, e.y - 10, '★ SPECIAL ★', '#ffd43b', 20)
@@ -1250,7 +1244,6 @@ export class GameEngine {
       case 'chest': {
         this.gold += 25
         h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.35)
-        h.mana = this.stats.maxMana
         this.floatText(h.x, h.y - 36, '🎁 TREASURE!', '#ffd43b', 30)
         for (let i = 0; i < 24; i++) {
           const a = Math.random() * Math.PI * 2
@@ -1314,8 +1307,7 @@ export class GameEngine {
     // 1) Synergy evolutions — offered when you own BOTH ingredients and not the result yet.
     for (const syn of SKILL_SYNERGIES) {
       if (this.owned(syn.result)) continue
-      const [a, b] = syn.ingredients
-      if (!this.owned(a) || !this.owned(b)) continue
+      if (!syn.ingredients.every((ingredient) => this.owned(ingredient))) continue
       const def = SKILLS[syn.result]
       opts.push({
         weight: 9, // strongly surface evolutions
@@ -1324,7 +1316,7 @@ export class GameEngine {
           desc: def.description, rarity: def.rarity, tag: '✨ EVOLVE',
         },
         apply: () => {
-          this.skills = this.skills.filter((os) => os.id !== a && os.id !== b)
+          this.skills = this.skills.filter((os) => !syn.ingredients.includes(os.id))
           this.skills.push({ id: syn.result, level: 1 })
           this.recomputeStats()
         },
@@ -1405,9 +1397,8 @@ export class GameEngine {
     const h = this.hero
     const s = this.stats
 
-    // regen
+    // health regeneration; Rage only comes from kills and never regenerates.
     h.hp = Math.min(s.maxHp, h.hp + s.hpRegen * dt)
-    h.mana = Math.min(s.maxMana, h.mana + s.manaRegen * dt)
 
     // cooldowns
     h.dashCd = Math.max(0, h.dashCd - dt)
@@ -1421,6 +1412,11 @@ export class GameEngine {
     }
     h.invuln = Math.max(0, h.invuln - dt)
     h.shieldT = Math.max(0, h.shieldT - dt)
+    h.counterT = Math.max(0, h.counterT - dt)
+    h.lastStandT = Math.max(0, h.lastStandT - dt)
+    h.furyT = Math.max(0, h.furyT - dt)
+    h.willT = Math.max(0, h.willT - dt)
+    h.willCd = Math.max(0, h.willCd - dt)
     this.heroTurnT = Math.max(0, this.heroTurnT - dt)
     if (h.swingT > 0) h.swingT -= dt
     if (h.skillAttackT > 0) h.skillAttackT -= dt
@@ -1444,7 +1440,11 @@ export class GameEngine {
         if (h.dashHits.has(e)) continue
         if (Math.hypot(e.x - h.x, e.y - h.y) < e.radius + 22) {
           h.dashHits.add(e)
-          this.damageEnemy(e, this.stats.dashDamage, true)
+          const dashLevel = this.owned('dash')?.level
+            ?? this.owned('inferno')?.level
+            ?? this.owned('blade-dancer')?.level
+            ?? 1
+          this.damageEnemy(e, this.stats.dashDamage * (1 + (dashLevel - 1) * 0.22), true, true)
         }
       }
     } else {
@@ -1529,7 +1529,8 @@ export class GameEngine {
     if (attackTarget) {
       h.attackTimer -= dt
       if (h.attackTimer <= 0) {
-        h.attackTimer = s.attackInterval
+        const furyLevel = h.furyT > 0 ? (this.owned('power')?.level ?? 0) : 0
+        h.attackTimer = s.attackInterval / (1 + furyLevel * 0.1)
         this.swordSwing(attackTarget)
       }
     } else {
@@ -1820,6 +1821,15 @@ export class GameEngine {
       if (e.hitFlash > 0) e.hitFlash -= dt
       if (e.slowT > 0) e.slowT -= dt
       if (e.wCd > 0) e.wCd -= dt
+      if (e.bleedT > 0) {
+        e.bleedT -= dt
+        e.bleedTick -= dt
+        if (e.bleedTick <= 0) {
+          e.bleedTick = 0.5
+          this.damageEnemy(e, e.bleedDps * 0.5, true)
+          if (e.hp <= 0) continue
+        }
+      }
       e.phase += dt * 5
       e.facing = h.x < e.x ? -1 : 1
       const spd = this.freezeT > 0 ? 0 : e.speed * (e.slowT > 0 ? 0.45 : 1)
@@ -1955,9 +1965,37 @@ export class GameEngine {
   }
 
   private hurtHero(dmg: number) {
-    if (this.hero.invuln > 0 || this.hero.shieldT > 0) return
-    this.hero.hp -= dmg
-    this.hero.invuln = 0.2
+    const h = this.hero
+    if (h.invuln > 0 || h.shieldT > 0) return
+    const juggernaut = this.owned('vitality')?.level ?? 0
+    const unbreakable = this.owned('thorns')?.level ?? 0
+    if (h.moving && juggernaut > 0) dmg *= Math.max(0.7, 1 - juggernaut * 0.05)
+    if (h.willT > 0 && unbreakable > 0) dmg *= Math.max(0.55, 1 - unbreakable * 0.09)
+    if (unbreakable > 0 && h.willCd <= 0 && dmg >= this.stats.maxHp * 0.12) {
+      h.willCd = 6
+      h.willT = 2.2
+      h.rage = Math.min(this.stats.maxRage, h.rage + 5 * unbreakable)
+      this.floatText(h.x, h.y - 42, `+${5 * unbreakable} RAGE`, '#ff922b', 16)
+    }
+    h.hp -= dmg
+    if (h.counterT > 0) {
+      const counterLevel = this.owned('heal')?.level ?? this.owned('tempest')?.level ?? 1
+      const counterDamage = 24 + counterLevel * 10 + (this.owned('power')?.level ?? 0) * 8
+      for (const e of this.enemies) {
+        if (Math.hypot(e.x - h.x, e.y - h.y) < 125 + e.radius) {
+          this.damageEnemy(e, counterDamage, true, true)
+        }
+      }
+      h.hp = Math.min(this.stats.maxHp, h.hp + counterDamage * 0.45)
+      this.rings.push({ x: h.x, y: h.y, r: 8, maxR: 125, life: 0.28, color: 'rgba(220,55,65,0.7)' })
+    }
+    if (h.hp <= 0 && h.lastStandT > 0) {
+      h.hp = 1
+      h.lastStandT = 0
+      h.shieldT = 1.2
+      this.floatText(h.x, h.y - 52, 'NOT YET!', '#ffe066', 24)
+    }
+    h.invuln = 0.2
     this.floatText(this.hero.x, this.hero.y - 26, `-${Math.round(dmg)}`, '#ff8787', 18)
     this.shake(6)
   }
@@ -2890,8 +2928,9 @@ export class GameEngine {
       status: this.status,
       hp: Math.max(0, Math.round(h.hp)),
       maxHp: Math.round(s.maxHp),
-      mana: Math.round(h.mana),
-      maxMana: Math.round(s.maxMana),
+      rage: Math.round(h.rage),
+      maxRage: Math.round(s.maxRage),
+      className: 'Warrior',
       time: this.survTime,
       gold: this.gold,
       stage: this.stage,

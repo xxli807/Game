@@ -17,7 +17,7 @@ export default function MetaScreen({ meta, onStart }: Props) {
         <div className="sword-panel">
           <div className="sword-big">🗡️</div>
           <div className="sword-meta">
-            <div className="sword-lvl">Five-Skill Survival</div>
+            <div className="sword-lvl">⚔️ Warrior · Five-Skill Survival</div>
             <div className="sword-stats">
               {meta.runs === 0
                 ? 'Your first game awaits — good luck!'
@@ -29,8 +29,8 @@ export default function MetaScreen({ meta, onStart }: Props) {
 
         <h2 className="forge-title">⚡ Build Your Skills Each Run</h2>
         <p className="forge-note">
-          Every cleared stage offers three new or upgraded skills. You can hold five skills total.
-          Discover matching pairs to evolve them into stronger combined skills and free a slot.
+          Every cleared stage offers three new or upgraded Warrior skills. You can hold five skills total.
+          Discover branching combinations of two or three skills to unlock powerful evolutions.
         </p>
 
         <div className="how-to">
@@ -38,9 +38,11 @@ export default function MetaScreen({ meta, onStart }: Props) {
           <ul>
             <li><b>Move</b> with the <b>WASD</b> or <b>arrow</b> keys — on a phone, just <b>drag anywhere</b> to move.</li>
             <li>Your <b>sword attacks by itself</b> — steer your hero into the monsters and it does the rest.</li>
+            <li>Chop monsters down to gain <b>Rage</b>. Warrior skills consume Rage, which resets to zero every stage.</li>
+            <li>Base Warrior skills have <b>no cooldown</b>; Rage is their only casting limit.</li>
             <li>Each stage has a <b>fixed number of monsters</b>. Beat them all to advance.</li>
             <li>After every stage, <b>pick one of three skills</b>. New skills and upgrades share the same five slots.</li>
-            <li>Some skill pairs <b>combine into evolved skills</b>, removing both ingredients and freeing one slot.</li>
+            <li>Some groups of <b>two or three skills combine</b>, consuming their ingredients and freeing loadout slots.</li>
             <li>Grab items on the ground: <b>❤️ health, 🧲 magnet, 💣 bomb, ⏱️ freeze, 🎁 treasure</b>.</li>
             <li>Stages <b>10, 20, 30, and beyond</b> contain one powerful boss monster.</li>
             <li>Active skills use <b>Q</b>, <b>E</b>, <b>Space</b>, <b>R</b>, and <b>F</b> in skill-slot order.</li>

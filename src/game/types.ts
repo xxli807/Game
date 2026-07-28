@@ -2,8 +2,7 @@
 export interface Stats {
   maxHp: number
   hpRegen: number
-  maxMana: number
-  manaRegen: number
+  maxRage: number
   moveSpeed: number
   pickupRadius: number
 
@@ -18,45 +17,36 @@ export interface Stats {
   lifesteal: number
   thorns: number
 
-  // Q — dash slash
+  // Warrior active-skill tuning
   dashDamage: number
   dashRange: number
   dashCd: number
-  dashMana: number
-
-  // W — whirlwind
+  dashRage: number
   whirlDamage: number
   whirlRadius: number
   whirlCd: number
-  whirlMana: number
-
-  // E — fireball
+  whirlRage: number
   fireDamage: number
   fireCount: number
   fireCd: number
-  fireMana: number
+  fireRage: number
   fireRadius: number
-
-  // R — meteor storm (ultimate)
   ultDamage: number
   ultRadius: number
   ultMeteors: number
   ultCd: number
-  ultMana: number
-
-  // F — battle heal
+  ultRage: number
   healAmount: number
   shieldTime: number
   healCd: number
-  healMana: number
+  healRage: number
 }
 
 export function baseStats(): Stats {
   return {
     maxHp: 220,
     hpRegen: 3,
-    maxMana: 90,
-    manaRegen: 12,
+    maxRage: 100,
     moveSpeed: 240,
     pickupRadius: 110,
 
@@ -72,30 +62,26 @@ export function baseStats(): Stats {
 
     dashDamage: 25,
     dashRange: 240,
-    dashCd: 3,
-    dashMana: 15,
-
-    whirlDamage: 30,
-    whirlRadius: 130,
-    whirlCd: 6,
-    whirlMana: 25,
-
-    fireDamage: 35,
+    dashCd: 0,
+    dashRage: 20,
+    whirlDamage: 34,
+    whirlRadius: 145,
+    whirlCd: 0,
+    whirlRage: 15,
+    fireDamage: 48,
     fireCount: 1,
-    fireCd: 2,
-    fireMana: 20,
-    fireRadius: 55,
-
-    ultDamage: 90,
-    ultRadius: 170,
-    ultMeteors: 6,
-    ultCd: 14,
-    ultMana: 55,
-
-    healAmount: 70,
-    shieldTime: 1.6,
-    healCd: 11,
-    healMana: 35,
+    fireCd: 0,
+    fireRage: 30,
+    fireRadius: 115,
+    ultDamage: 0,
+    ultRadius: 190,
+    ultMeteors: 0,
+    ultCd: 0,
+    ultRage: 25,
+    healAmount: 0,
+    shieldTime: 2.4,
+    healCd: 0,
+    healRage: 35,
   }
 }
 
@@ -106,44 +92,51 @@ export interface MetaState {
 }
 
 export function defaultMeta(): MetaState {
-  return {
-    bestStage: 0,
-    totalKills: 0,
-    runs: 0,
-  }
+  return { bestStage: 0, totalKills: 0, runs: 0 }
 }
 
-// ---------- Run-based skill system ----------
-export type Rarity = 'common' | 'rare' | 'epic'
+// ---------- Class and run-based skill system ----------
+export type ClassId = 'warrior'
 
+export interface ClassDefinition {
+  id: ClassId
+  name: string
+  icon: string
+  description: string
+  resourceName: string
+}
+
+export const CLASSES: Record<ClassId, ClassDefinition> = {
+  warrior: {
+    id: 'warrior',
+    name: 'Warrior',
+    icon: '⚔️',
+    description: 'A relentless melee fighter who gains Rage by chopping monsters down.',
+    resourceName: 'Rage',
+  },
+}
+
+export type Rarity = 'common' | 'rare' | 'epic'
 export type SkillKind = 'active' | 'passive'
 
+// Existing compact IDs are retained so saved/internal references remain stable.
 export type SkillId =
   | 'dash'
   | 'whirlwind'
   | 'fireball'
   | 'meteor'
   | 'heal'
-  | 'frost-nova'
-  | 'chain-lightning'
-  | 'blade-storm'
-  | 'holy-beam'
-  | 'time-warp'
   | 'power'
   | 'haste'
   | 'vitality'
-  | 'regeneration'
-  | 'focus'
-  | 'swiftness'
   | 'precision'
-  | 'vampirism'
-  | 'magnetism'
   | 'thorns'
   | 'inferno'
   | 'blade-dancer'
   | 'guardian-angel'
   | 'absolute-zero'
   | 'tempest'
+  | 'titanbreaker'
 
 export interface SkillDefinition {
   id: SkillId
@@ -157,7 +150,7 @@ export interface SkillDefinition {
 
 export interface SkillSynergy {
   result: SkillId
-  ingredients: [SkillId, SkillId]
+  ingredients: SkillId[]
 }
 
 export interface OwnedSkill {
@@ -166,64 +159,36 @@ export interface OwnedSkill {
 }
 
 export const SKILLS: Record<SkillId, SkillDefinition> = {
-  dash: { id: 'dash', name: 'Rending Dash', icon: '💨', description: 'Dash through enemies; upgrades damage and cooldown.', kind: 'active', rarity: 'common', maxLevel: 5 },
-  whirlwind: { id: 'whirlwind', name: 'Whirlwind', icon: '🌪️', description: 'Damage and knock back every nearby monster.', kind: 'active', rarity: 'common', maxLevel: 5 },
-  fireball: { id: 'fireball', name: 'Fireball', icon: '🔥', description: 'Launch an explosive fireball toward the nearest monster.', kind: 'active', rarity: 'common', maxLevel: 5 },
-  meteor: { id: 'meteor', name: 'Meteor Storm', icon: '☄️', description: 'Rain meteors over a large target area.', kind: 'active', rarity: 'rare', maxLevel: 5 },
-  heal: { id: 'heal', name: 'Battle Heal', icon: '✚', description: 'Restore health and gain a brief shield.', kind: 'active', rarity: 'common', maxLevel: 5 },
-  'frost-nova': { id: 'frost-nova', name: 'Frost Nova', icon: '❄️', description: 'Freeze and damage monsters around you.', kind: 'active', rarity: 'rare', maxLevel: 5 },
-  'chain-lightning': { id: 'chain-lightning', name: 'Chain Lightning', icon: '⚡', description: 'Lightning jumps rapidly between nearby monsters.', kind: 'active', rarity: 'rare', maxLevel: 5 },
-  'blade-storm': { id: 'blade-storm', name: 'Blade Storm', icon: '🗡️', description: 'Fire a ring of piercing spectral blades.', kind: 'active', rarity: 'rare', maxLevel: 5 },
-  'holy-beam': { id: 'holy-beam', name: 'Holy Beam', icon: '🌟', description: 'Strike the nearest monster with focused holy power.', kind: 'active', rarity: 'rare', maxLevel: 5 },
-  'time-warp': { id: 'time-warp', name: 'Time Warp', icon: '⏳', description: 'Stop all monsters and enemy projectiles briefly.', kind: 'active', rarity: 'epic', maxLevel: 5 },
-  power: { id: 'power', name: 'Brutal Power', icon: '💪', description: '+25% sword damage per level.', kind: 'passive', rarity: 'common', maxLevel: 5 },
-  haste: { id: 'haste', name: 'Battle Haste', icon: '🌀', description: '+15% sword attack speed per level.', kind: 'passive', rarity: 'common', maxLevel: 5 },
-  vitality: { id: 'vitality', name: 'Vitality', icon: '❤️', description: '+45 maximum health per level.', kind: 'passive', rarity: 'common', maxLevel: 5 },
-  regeneration: { id: 'regeneration', name: 'Regeneration', icon: '💚', description: '+3 health regeneration per second per level.', kind: 'passive', rarity: 'common', maxLevel: 5 },
-  focus: { id: 'focus', name: 'Arcane Focus', icon: '🔵', description: '+25 mana and +3 mana regeneration per level.', kind: 'passive', rarity: 'common', maxLevel: 5 },
-  swiftness: { id: 'swiftness', name: 'Swiftness', icon: '👟', description: '+12% movement speed per level.', kind: 'passive', rarity: 'common', maxLevel: 5 },
-  precision: { id: 'precision', name: 'Precision', icon: '🎯', description: '+10% critical chance per level.', kind: 'passive', rarity: 'rare', maxLevel: 5 },
-  vampirism: { id: 'vampirism', name: 'Vampirism', icon: '🩸', description: '+5% lifesteal per level.', kind: 'passive', rarity: 'rare', maxLevel: 5 },
-  magnetism: { id: 'magnetism', name: 'Magnetism', icon: '🧲', description: '+50% pickup radius per level.', kind: 'passive', rarity: 'common', maxLevel: 5 },
-  thorns: { id: 'thorns', name: 'Spiked Armor', icon: '🛡️', description: 'Reflect 25% contact damage per level.', kind: 'passive', rarity: 'rare', maxLevel: 5 },
-  inferno: { id: 'inferno', name: 'Inferno', icon: '🌋', description: 'Fireball + Meteor: launch fireballs and rain meteors together.', kind: 'active', rarity: 'epic', maxLevel: 5 },
-  'blade-dancer': { id: 'blade-dancer', name: 'Blade Dancer', icon: '⚔️', description: 'Dash + Whirlwind: become an invulnerable spinning charge.', kind: 'active', rarity: 'epic', maxLevel: 5 },
-  'guardian-angel': { id: 'guardian-angel', name: 'Guardian Angel', icon: '🪽', description: 'Heal + Vitality: fully heal and gain a powerful shield.', kind: 'active', rarity: 'epic', maxLevel: 5 },
-  'absolute-zero': { id: 'absolute-zero', name: 'Absolute Zero', icon: '🧊', description: 'Frost Nova + Time Warp: freeze and shatter the whole screen.', kind: 'active', rarity: 'epic', maxLevel: 5 },
-  tempest: { id: 'tempest', name: 'Tempest', icon: '🌩️', description: 'Chain Lightning + Precision: a devastating critical lightning storm.', kind: 'active', rarity: 'epic', maxLevel: 5 },
+  dash: { id: 'dash', name: 'Iron Rush', icon: '💨', description: 'No cooldown · 20 Rage · Charge through enemies and briefly stun them.', kind: 'active', rarity: 'common', maxLevel: 5 },
+  whirlwind: { id: 'whirlwind', name: 'Cleaving Arc', icon: '🪓', description: 'No cooldown · 15 Rage · Deliver a wide frontal strike with a deadly center.', kind: 'active', rarity: 'common', maxLevel: 5 },
+  fireball: { id: 'fireball', name: 'Seismic Leap', icon: '💥', description: 'No cooldown · 30 Rage · Leap to the target and release a damaging shockwave.', kind: 'active', rarity: 'common', maxLevel: 5 },
+  meteor: { id: 'meteor', name: 'Challenging Roar', icon: '📣', description: 'No cooldown · 25 Rage · Taunt the swarm and gain a shield for each nearby enemy.', kind: 'active', rarity: 'rare', maxLevel: 5 },
+  heal: { id: 'heal', name: 'Blood Reprisal', icon: '🩸', description: 'No cooldown · 35 Rage · Counter incoming attacks with damage and healing.', kind: 'active', rarity: 'rare', maxLevel: 5 },
+  power: { id: 'power', name: 'Battle Fury', icon: '🔥', description: 'Gain more Rage from kills; spending Rage empowers sword attacks.', kind: 'passive', rarity: 'common', maxLevel: 5 },
+  haste: { id: 'haste', name: 'Deep Wounds', icon: '🩸', description: 'Critical and heavy attacks inflict bleed; bleeding kills grant bonus Rage.', kind: 'passive', rarity: 'rare', maxLevel: 5 },
+  vitality: { id: 'vitality', name: 'Juggernaut', icon: '🛡️', description: 'Gain maximum health and damage reduction while moving.', kind: 'passive', rarity: 'common', maxLevel: 5 },
+  precision: { id: 'precision', name: 'Weapon Mastery', icon: '⚔️', description: 'Increase sword damage, critical damage, and melee reach.', kind: 'passive', rarity: 'rare', maxLevel: 5 },
+  thorns: { id: 'thorns', name: 'Unbreakable Will', icon: '⛓️', description: 'Heavy hits grant Rage and brief damage reduction.', kind: 'passive', rarity: 'rare', maxLevel: 5 },
+  inferno: { id: 'inferno', name: 'Bladestorm Charge', icon: '🌪️', description: '40 Rage · Charge unstoppably while repeatedly striking around you.', kind: 'active', rarity: 'epic', maxLevel: 5 },
+  'blade-dancer': { id: 'blade-dancer', name: 'Living Battering Ram', icon: '🐏', description: '35 Rage · A fortified charge that scatters enemies and refunds Rage on kills.', kind: 'active', rarity: 'epic', maxLevel: 5 },
+  'guardian-angel': { id: 'guardian-angel', name: 'Crimson Earthshatter', icon: '🌋', description: '45 Rage · Leap down and open bleeding fissures around the impact.', kind: 'active', rarity: 'epic', maxLevel: 5 },
+  'absolute-zero': { id: 'absolute-zero', name: 'Last Stand', icon: '🛡️', description: '50 Rage · Taunt, recover, and survive one otherwise-fatal blow.', kind: 'active', rarity: 'epic', maxLevel: 5 },
+  tempest: { id: 'tempest', name: "Berserker's Reckoning", icon: '😡', description: '55 Rage · Enter a frenzy of healing counterattacks.', kind: 'active', rarity: 'epic', maxLevel: 5 },
+  titanbreaker: { id: 'titanbreaker', name: 'Titanbreaker', icon: '⚡', description: '60 Rage · Leap, cleave, and send a devastating shockwave forward.', kind: 'active', rarity: 'epic', maxLevel: 5 },
 }
 
 export const SKILL_SYNERGIES: SkillSynergy[] = [
-  { result: 'inferno', ingredients: ['fireball', 'meteor'] },
-  { result: 'blade-dancer', ingredients: ['dash', 'whirlwind'] },
-  { result: 'guardian-angel', ingredients: ['heal', 'vitality'] },
-  { result: 'absolute-zero', ingredients: ['frost-nova', 'time-warp'] },
-  { result: 'tempest', ingredients: ['chain-lightning', 'precision'] },
+  { result: 'inferno', ingredients: ['dash', 'whirlwind'] },
+  { result: 'blade-dancer', ingredients: ['dash', 'vitality'] },
+  { result: 'guardian-angel', ingredients: ['fireball', 'haste'] },
+  { result: 'absolute-zero', ingredients: ['meteor', 'thorns'] },
+  { result: 'tempest', ingredients: ['heal', 'power'] },
+  { result: 'titanbreaker', ingredients: ['whirlwind', 'fireball', 'precision'] },
 ]
 
 export const BASE_SKILL_IDS = (Object.keys(SKILLS) as SkillId[]).filter(
   (id) => !SKILL_SYNERGIES.some((synergy) => synergy.result === id),
 )
-
-export interface LegacyCard {
-  id: string
-  name: string
-  icon: string
-  desc: string
-  rarity: Rarity
-  apply: (s: Stats) => void
-}
-
-export const CARD_POOL: LegacyCard[] = [
-  { id: 'power', name: 'Brutal Power', icon: '⚔️', desc: '+4 sword damage.', rarity: 'common', apply: (s) => { s.swordDamage += 4 } },
-  { id: 'haste', name: 'Battle Haste', icon: '💨', desc: '+12% sword attack speed.', rarity: 'common', apply: (s) => { s.attackInterval = Math.max(0.16, s.attackInterval * 0.88) } },
-  { id: 'vitality', name: 'Vitality', icon: '❤️', desc: '+35 maximum health.', rarity: 'common', apply: (s) => { s.maxHp += 35 } },
-  { id: 'regeneration', name: 'Regeneration', icon: '💚', desc: '+1.5 health regeneration per second.', rarity: 'common', apply: (s) => { s.hpRegen += 1.5 } },
-  { id: 'focus', name: 'Arcane Focus', icon: '🔵', desc: '+20 mana and +2 mana regeneration.', rarity: 'common', apply: (s) => { s.maxMana += 20; s.manaRegen += 2 } },
-  { id: 'swiftness', name: 'Swiftness', icon: '👟', desc: '+10% movement speed.', rarity: 'common', apply: (s) => { s.moveSpeed *= 1.1 } },
-  { id: 'precision', name: 'Precision', icon: '🎯', desc: '+8% critical chance.', rarity: 'rare', apply: (s) => { s.crit = Math.min(0.75, s.crit + 0.08) } },
-  { id: 'magnetism', name: 'Magnetism', icon: '🧲', desc: '+35% pickup radius.', rarity: 'common', apply: (s) => { s.pickupRadius *= 1.35 } },
-]
 
 // ---------- Live snapshot for the React HUD ----------
 export type GameStatus = 'menu' | 'playing' | 'skillselect' | 'paused' | 'dead'
@@ -235,25 +200,25 @@ export interface AbilityView {
   icon: string
   cdLeft: number
   cdMax: number
-  manaCost: number
+  rageCost: number
 }
 
-/** A single option shown in the post-stage skill draft. */
 export interface DraftChoice {
   id: string
   name: string
   icon: string
   desc: string
   rarity: Rarity
-  tag?: string // e.g. "NEW WEAPON", "Lv 3"
+  tag?: string
 }
 
 export interface HudState {
   status: GameStatus
   hp: number
   maxHp: number
-  mana: number
-  maxMana: number
+  rage: number
+  maxRage: number
+  className: string
   time: number
   gold: number
   stage: number
@@ -268,6 +233,5 @@ export interface HudState {
   abilities: AbilityView[]
   skills: OwnedSkill[]
   cards: DraftChoice[]
-  // filled on death
   runKills: number
 }

@@ -69,11 +69,11 @@ export default function LevelUpModal({ cards, skills, clearedStage, onPick }: Pr
                 <div className="card-name">{c.name}</div>
                 <div className="card-rarity">{c.rarity}</div>
                 <div className="card-desc">{c.desc}</div>
-                {synergies.map(({ ownedId, resultId }) => (
+                {synergies.map(({ ownedIds, resultId }) => (
                   <div className="card-synergy-note" key={resultId}>
                     <span className="card-synergy-label">✨ SYNERGY</span>
                     <span>
-                      + {SKILLS[ownedId].icon} {SKILLS[ownedId].name}
+                      + {ownedIds.map((id) => `${SKILLS[id].icon} ${SKILLS[id].name}`).join(' + ')}
                       {' → '}
                       {SKILLS[resultId].name}
                     </span>
@@ -97,9 +97,9 @@ function getNewSkillSynergies(card: DraftChoice, skills: OwnedSkill[]) {
   const ownedIds = new Set(skills.map((skill) => skill.id))
   return SKILL_SYNERGIES.flatMap((synergy) => {
     if (ownedIds.has(synergy.result) || !synergy.ingredients.includes(candidateId)) return []
-    const ownedId = synergy.ingredients.find(
-      (ingredient) => ingredient !== candidateId && ownedIds.has(ingredient),
-    )
-    return ownedId ? [{ ownedId, resultId: synergy.result }] : []
+    const requiredOwnedIds = synergy.ingredients.filter((ingredient) => ingredient !== candidateId)
+    return requiredOwnedIds.every((ingredient) => ownedIds.has(ingredient))
+      ? [{ ownedIds: requiredOwnedIds, resultId: synergy.result }]
+      : []
   })
 }
