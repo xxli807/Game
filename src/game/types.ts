@@ -98,7 +98,7 @@ export function defaultMeta(): MetaState {
 }
 
 // ---------- Class and run-based skill system ----------
-export type ClassId = 'warrior' | 'mage'
+export type ClassId = 'warrior' | 'mage' | 'necromancer'
 
 export interface ClassDefinition {
   id: ClassId
@@ -122,6 +122,13 @@ export const CLASSES: Record<ClassId, ClassDefinition> = {
     icon: '🧙',
     description: 'A ranged spellcaster who controls fire, frost, and arcane magic with regenerating Mana.',
     resourceName: 'Mana',
+  },
+  necromancer: {
+    id: 'necromancer',
+    name: 'Necromancer',
+    icon: '💀',
+    description: 'A dark summoner who harvests Essence and commands an army of skeletons.',
+    resourceName: 'Essence',
   },
 }
 
@@ -162,6 +169,22 @@ export type SkillId =
   | 'mage-prismatic-step'
   | 'mage-glacial-aegis'
   | 'mage-elemental-convergence'
+  | 'necro-raise-skeleton'
+  | 'necro-bone-spear'
+  | 'necro-corpse-burst'
+  | 'necro-blood-nova'
+  | 'necro-decrepify'
+  | 'necro-skeleton-mastery'
+  | 'necro-grim-harvest'
+  | 'necro-bone-armor'
+  | 'necro-blood-pact'
+  | 'necro-dark-command'
+  | 'necro-skeleton-legion'
+  | 'necro-ossuary-lance'
+  | 'necro-corpse-cathedral'
+  | 'necro-crimson-covenant'
+  | 'necro-withering-army'
+  | 'necro-army-of-the-dead'
 
 export interface SkillDefinition {
   id: SkillId
@@ -217,6 +240,22 @@ export const SKILLS: Record<SkillId, SkillDefinition> = {
   'mage-prismatic-step': { id: 'mage-prismatic-step', name: 'Prismatic Step', icon: '🪞', description: '35 Mana · Blink and release arcane echoes in every direction.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'mage' },
   'mage-glacial-aegis': { id: 'mage-glacial-aegis', name: 'Glacial Aegis', icon: '🛡️', description: '50 Mana · Raise a powerful barrier that freezes nearby foes.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'mage' },
   'mage-elemental-convergence': { id: 'mage-elemental-convergence', name: 'Elemental Convergence', icon: '🌌', description: '60 Mana · Detonate fire, frost, and arcane magic together.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'mage' },
+  'necro-raise-skeleton': { id: 'necro-raise-skeleton', name: 'Raise Skeleton', icon: '💀', description: '18 Essence · Raise a persistent skeletal warrior to hunt nearby enemies.', kind: 'active', rarity: 'common', maxLevel: 5, classId: 'necromancer' },
+  'necro-bone-spear': { id: 'necro-bone-spear', name: 'Bone Spear', icon: '🦴', description: '22 Essence · Hurl a piercing spear of sharpened bone.', kind: 'active', rarity: 'common', maxLevel: 5, classId: 'necromancer' },
+  'necro-corpse-burst': { id: 'necro-corpse-burst', name: 'Corpse Burst', icon: '🪦', description: '25 Essence · Consume a corpse to damage everything around it.', kind: 'active', rarity: 'common', maxLevel: 5, classId: 'necromancer' },
+  'necro-blood-nova': { id: 'necro-blood-nova', name: 'Blood Nova', icon: '🩸', description: '30 Essence · Release a life-draining ring of blood magic.', kind: 'active', rarity: 'rare', maxLevel: 5, classId: 'necromancer' },
+  'necro-decrepify': { id: 'necro-decrepify', name: 'Decrepify', icon: '🕯️', description: '24 Essence · Curse nearby enemies, heavily slowing them.', kind: 'active', rarity: 'rare', maxLevel: 5, classId: 'necromancer' },
+  'necro-skeleton-mastery': { id: 'necro-skeleton-mastery', name: 'Skeleton Mastery', icon: '⚰️', description: 'Increase skeleton capacity, damage, and movement speed.', kind: 'passive', rarity: 'common', maxLevel: 5, classId: 'necromancer' },
+  'necro-grim-harvest': { id: 'necro-grim-harvest', name: 'Grim Harvest', icon: '🌾', description: 'Gain more Essence from kills and occasionally raise a free skeleton.', kind: 'passive', rarity: 'rare', maxLevel: 5, classId: 'necromancer' },
+  'necro-bone-armor': { id: 'necro-bone-armor', name: 'Bone Armor', icon: '🛡️', description: 'Gain maximum health; consuming corpses grants a brief barrier.', kind: 'passive', rarity: 'common', maxLevel: 5, classId: 'necromancer' },
+  'necro-blood-pact': { id: 'necro-blood-pact', name: 'Blood Pact', icon: '❤️‍🔥', description: 'Blood magic and minion attacks restore a portion of health.', kind: 'passive', rarity: 'rare', maxLevel: 5, classId: 'necromancer' },
+  'necro-dark-command': { id: 'necro-dark-command', name: 'Dark Command', icon: '👑', description: 'Skeletons attack faster and focus cursed enemies.', kind: 'passive', rarity: 'rare', maxLevel: 5, classId: 'necromancer' },
+  'necro-skeleton-legion': { id: 'necro-skeleton-legion', name: 'Skeleton Legion', icon: '☠️', description: '45 Essence · Raise four empowered skeletons at once.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'necromancer' },
+  'necro-ossuary-lance': { id: 'necro-ossuary-lance', name: 'Ossuary Lance', icon: '🗡️', description: '42 Essence · Fire a massive bone lance and gain a bone barrier.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'necromancer' },
+  'necro-corpse-cathedral': { id: 'necro-corpse-cathedral', name: 'Corpse Cathedral', icon: '⛪', description: '48 Essence · Detonate every nearby corpse in a chain reaction.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'necromancer' },
+  'necro-crimson-covenant': { id: 'necro-crimson-covenant', name: 'Crimson Covenant', icon: '🫀', description: '50 Essence · Unleash a vast blood nova that heals you and your army.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'necromancer' },
+  'necro-withering-army': { id: 'necro-withering-army', name: 'Withering Army', icon: '🕸️', description: '46 Essence · Curse the battlefield and frenzy every skeleton.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'necromancer' },
+  'necro-army-of-the-dead': { id: 'necro-army-of-the-dead', name: 'Army of the Dead', icon: '🏴‍☠️', description: '60 Essence · Consume corpses and flood the battlefield with the dead.', kind: 'active', rarity: 'epic', maxLevel: 5, classId: 'necromancer' },
 }
 
 export const SKILL_SYNERGIES: SkillSynergy[] = [
@@ -232,6 +271,12 @@ export const SKILL_SYNERGIES: SkillSynergy[] = [
   { result: 'mage-prismatic-step', ingredients: ['mage-blink', 'mage-spell-haste'] },
   { result: 'mage-glacial-aegis', ingredients: ['mage-ice-barrier', 'mage-mana-shield'] },
   { result: 'mage-elemental-convergence', ingredients: ['mage-cinderbolt', 'mage-frost-nova', 'mage-arcane-orbs'] },
+  { result: 'necro-skeleton-legion', ingredients: ['necro-raise-skeleton', 'necro-skeleton-mastery'] },
+  { result: 'necro-ossuary-lance', ingredients: ['necro-bone-spear', 'necro-bone-armor'] },
+  { result: 'necro-corpse-cathedral', ingredients: ['necro-corpse-burst', 'necro-grim-harvest'] },
+  { result: 'necro-crimson-covenant', ingredients: ['necro-blood-nova', 'necro-blood-pact'] },
+  { result: 'necro-withering-army', ingredients: ['necro-decrepify', 'necro-dark-command'] },
+  { result: 'necro-army-of-the-dead', ingredients: ['necro-raise-skeleton', 'necro-corpse-burst', 'necro-grim-harvest'] },
 ]
 
 export const BASE_SKILL_IDS = (Object.keys(SKILLS) as SkillId[]).filter(
@@ -274,6 +319,7 @@ export interface HudState {
   maxRage: number
   className: string
   resourceName: string
+  minionCount: number
   time: number
   gold: number
   stage: number

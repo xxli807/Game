@@ -27,9 +27,9 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
         <div className="vitals">
           <Bar className="hp" pct={hpPct} label={`❤️ ${state.hp}/${state.maxHp}`} />
           <Bar
-            className={state.resourceName === 'Mana' ? 'mana' : 'rage'}
+            className={state.resourceName === 'Mana' ? 'mana' : state.resourceName === 'Essence' ? 'essence' : 'rage'}
             pct={ragePct}
-            label={`${state.resourceName === 'Mana' ? '💧' : '🔥'} ${state.resourceName.toUpperCase()} ${state.rage}/${state.maxRage}`}
+            label={`${state.resourceName === 'Mana' ? '💧' : state.resourceName === 'Essence' ? '🟢' : '🔥'} ${state.resourceName.toUpperCase()} ${state.rage}/${state.maxRage}`}
           />
         </div>
         <div className="weapons">
@@ -51,10 +51,13 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
         <div className="chip">👹 {remaining} remaining</div>
         <div className="chip">📍 {state.biome}</div>
         <div className="chip">💀 {state.kills}</div>
+        {state.className === 'Necromancer' && <div className="chip">☠️ {state.minionCount} summoned</div>}
         <div className="chip">🪙 {state.gold}</div>
         <div className="chip chip-sword">
           {state.className === 'Mage'
             ? `🪄 Arcane Focus · T${state.swordTier}`
+            : state.className === 'Necromancer'
+              ? `💀 Bone Focus · T${state.swordTier}`
             : `${state.swordStyleIcon} ${state.swordStyleName} · T${state.swordTier}`}
         </div>
       </div>

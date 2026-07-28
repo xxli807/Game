@@ -18,7 +18,7 @@ export default function MetaScreen({ meta, classId, onClassChange, onStart }: Pr
         </p>
 
         <div className="sword-panel">
-          <div className="sword-big">{classId === 'mage' ? '🪄' : '🗡️'}</div>
+          <div className="sword-big">{classId === 'warrior' ? '🗡️' : classId === 'mage' ? '🪄' : '💀'}</div>
           <div className="sword-meta">
             <div className="sword-lvl">{selectedClass.icon} {selectedClass.name} · Five-Skill Survival</div>
             <div className="sword-stats">
@@ -52,16 +52,21 @@ export default function MetaScreen({ meta, classId, onClassChange, onStart }: Pr
           <h3>How to play</h3>
           <ul>
             <li><b>Move</b> with the <b>WASD</b> or <b>arrow</b> keys — on a phone, just <b>drag anywhere</b> to move.</li>
-            <li>Your <b>sword attacks by itself</b> — steer your hero into the monsters and it does the rest.</li>
+            <li>Your <b>{classId === 'warrior' ? 'sword' : 'ranged weapon'} attacks by itself</b> — steer your hero near monsters and it does the rest.</li>
             {classId === 'warrior' ? (
               <>
                 <li>Chop monsters down to gain <b>Rage</b>. Warrior skills consume Rage, which resets to zero every stage.</li>
                 <li>Base Warrior skills have <b>no cooldown</b>; Rage is their only casting limit.</li>
               </>
-            ) : (
+            ) : classId === 'mage' ? (
               <>
                 <li>Mage skills consume <b>Mana</b>, which starts full and slowly regenerates over time.</li>
                 <li>Combine fire, frost, and arcane skills to unlock powerful evolved spells.</li>
+              </>
+            ) : (
+              <>
+                <li>Defeated enemies leave <b>corpses</b> and grant <b>Essence</b> for dark magic.</li>
+                <li>Raise persistent <b>skeletons</b> that automatically pursue and attack enemies.</li>
               </>
             )}
             <li>Each stage has a <b>fixed number of monsters</b>. Beat them all to advance.</li>

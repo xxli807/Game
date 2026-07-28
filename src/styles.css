@@ -210,10 +210,11 @@ body {
 .stat-fill.hp { background: linear-gradient(90deg, #ff6b6b, #ff8787); }
 .stat-fill.rage { background: linear-gradient(90deg, #c92a2a, #ff922b); }
 .stat-fill.mana { background: linear-gradient(90deg, #1864ab, #4dabf7); }
+.stat-fill.essence { background: linear-gradient(90deg, #2b8a3e, #69db7c); }
 
 .class-picker {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   width: 100%;
   margin: 12px 0;

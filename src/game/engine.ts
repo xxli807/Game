@@ -114,6 +114,22 @@ interface Enemy {
   bleedTick: number
 }
 
+interface Skeleton {
+  x: number
+  y: number
+  damage: number
+  speed: number
+  attackCd: number
+  phase: number
+  empowered: boolean
+}
+
+interface Corpse {
+  x: number
+  y: number
+  life: number
+}
+
 interface Decoration {
   x: number
   y: number
@@ -237,6 +253,17 @@ const ACTIVE_CFG: Partial<Record<SkillId, { cd: number; rage: number }>> = {
   'mage-prismatic-step': { cd: 7, rage: 35 },
   'mage-glacial-aegis': { cd: 14, rage: 50 },
   'mage-elemental-convergence': { cd: 16, rage: 60 },
+  'necro-raise-skeleton': { cd: 0, rage: 18 },
+  'necro-bone-spear': { cd: 0, rage: 22 },
+  'necro-corpse-burst': { cd: 0, rage: 25 },
+  'necro-blood-nova': { cd: 0, rage: 30 },
+  'necro-decrepify': { cd: 0, rage: 24 },
+  'necro-skeleton-legion': { cd: 10, rage: 45 },
+  'necro-ossuary-lance': { cd: 8, rage: 42 },
+  'necro-corpse-cathedral': { cd: 12, rage: 48 },
+  'necro-crimson-covenant': { cd: 14, rage: 50 },
+  'necro-withering-army': { cd: 12, rage: 46 },
+  'necro-army-of-the-dead': { cd: 18, rage: 60 },
 }
 
 const KIND_EMOJI: Record<EnemyKind, string> = {
@@ -269,6 +296,8 @@ export class GameEngine {
   private slashes: SlashFx[] = []
   private rings: RingFx[] = []
   private meteors: Meteor[] = []
+  private skeletons: Skeleton[] = []
+  private corpses: Corpse[] = []
 
   private stage = 1
   private stageSpawned = 0
@@ -294,6 +323,7 @@ export class GameEngine {
   private freezeT = 0
   private flash = 0
   private treasureTimer = 18
+  private skeletonFrenzyT = 0
   private survTime = 0
   private readonly MAX_STAGE_ENEMIES = 140
   private cam: Vec = { x: 0, y: 0 }
@@ -365,7 +395,7 @@ export class GameEngine {
     const load = (file: string) => { const i = new Image(); i.src = `${base}arts/${file}.png`; return i }
     const biomes: Biome[] = ['dungeon', 'forest', 'snow', 'volcano']
     for (const b of biomes) this.tileImgs[b] = load(`tile_${b}`)
-    const heroPrefix = this.classId === 'mage' ? 'hero_mage' : 'hero_ashen'
+    const heroPrefix = this.classId === 'warrior' ? 'hero_ashen' : 'hero_mage'
     this.heroImg = load(`${heroPrefix}_turn_1`)
     this.heroDir = {
       down: load(`${heroPrefix}_turn_1`),
@@ -446,6 +476,8 @@ export class GameEngine {
     this.slashes = []
     this.rings = []
     this.meteors = []
+    this.skeletons = []
+    this.corpses = []
     this.ambient = []
     this.pickups = []
     this.bolts = []
@@ -464,6 +496,7 @@ export class GameEngine {
     this.freezeT = 0
     this.flash = 0
     this.treasureTimer = 18
+    this.skeletonFrenzyT = 0
     this.survTime = 0
     this.stage = 1
     this.stageSpawned = 0
@@ -936,6 +969,17 @@ export class GameEngine {
       case 'mage-prismatic-step': this.castMagePrismaticStep(os.level); break
       case 'mage-glacial-aegis': this.castMageGlacialAegis(os.level); break
       case 'mage-elemental-convergence': this.castMageElementalConvergence(os.level); break
+      case 'necro-raise-skeleton': this.castRaiseSkeleton(os.level); break
+      case 'necro-bone-spear': this.castBoneSpear(os.level); break
+      case 'necro-corpse-burst': this.castCorpseBurst(os.level); break
+      case 'necro-blood-nova': this.castBloodNova(os.level); break
+      case 'necro-decrepify': this.castDecrepify(os.level); break
+      case 'necro-skeleton-legion': this.castSkeletonLegion(os.level); break
+      case 'necro-ossuary-lance': this.castOssuaryLance(os.level); break
+      case 'necro-corpse-cathedral': this.castCorpseCathedral(os.level); break
+      case 'necro-crimson-covenant': this.castCrimsonCovenant(os.level); break
+      case 'necro-withering-army': this.castWitheringArmy(os.level); break
+      case 'necro-army-of-the-dead': this.castArmyOfTheDead(os.level); break
     }
   }
 
@@ -1012,6 +1056,11 @@ export class GameEngine {
         s.moveSpeed *= 1 + 0.04 * lvl
         break
       case 'mage-mana-shield': s.maxHp += 25 * lvl; break
+      case 'necro-skeleton-mastery': break
+      case 'necro-grim-harvest': break
+      case 'necro-bone-armor': s.maxHp += 30 * lvl; break
+      case 'necro-blood-pact': break
+      case 'necro-dark-command': s.moveSpeed *= 1 + 0.02 * lvl; break
       default: break
     }
   }
@@ -1237,6 +1286,167 @@ export class GameEngine {
     this.rings.push({ x: this.hero.x, y: this.hero.y, r: 8, maxR: 60, life: 0.35, color: 'rgba(185,110,255,0.7)' })
   }
 
+  // ---- Necromancer active skills and summons ----
+  private castRaiseSkeleton(lvl: number) {
+    if (!this.beginActive('necro-raise-skeleton')) return
+    const count = lvl >= 4 ? 2 : 1
+    for (let i = 0; i < count; i++) this.raiseSkeleton(lvl)
+    this.floatText(this.hero.x, this.hero.y - 42, 'RISE!', '#8ce99a', 22)
+  }
+
+  private castBoneSpear(lvl: number) {
+    if (!this.beginActive('necro-bone-spear')) return
+    this.fireBoneSpear(42 + lvl * 14, 4 + lvl)
+  }
+
+  private castCorpseBurst(lvl: number) {
+    const corpse = this.nearestCorpse()
+    if (!corpse) {
+      this.floatText(this.hero.x, this.hero.y - 38, 'NO CORPSE', '#adb5bd', 16)
+      return
+    }
+    if (!this.beginActive('necro-corpse-burst')) return
+    this.detonateCorpse(corpse, 48 + lvl * 18, 120 + lvl * 8)
+  }
+
+  private castBloodNova(lvl: number) {
+    if (!this.beginActive('necro-blood-nova')) return
+    this.bloodNova(155 + lvl * 10, 34 + lvl * 13, 0.06 + lvl * 0.01)
+  }
+
+  private castDecrepify(lvl: number) {
+    if (!this.beginActive('necro-decrepify')) return
+    const radius = 230 + lvl * 18
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - this.hero.x, e.y - this.hero.y) < radius + e.radius) {
+        e.slowT = Math.max(e.slowT, 3.5 + lvl * 0.5)
+      }
+    }
+    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: radius, life: 0.55, color: 'rgba(105,190,115,0.7)' })
+    this.floatText(this.hero.x, this.hero.y - 42, 'DECREPIFY', '#8ce99a', 20)
+  }
+
+  private castSkeletonLegion(lvl: number) {
+    if (!this.beginActive('necro-skeleton-legion')) return
+    for (let i = 0; i < 4; i++) this.raiseSkeleton(lvl + 2, true)
+    this.floatText(this.hero.x, this.hero.y - 48, 'SKELETON LEGION', '#b2f2bb', 23)
+  }
+
+  private castOssuaryLance(lvl: number) {
+    if (!this.beginActive('necro-ossuary-lance')) return
+    this.fireBoneSpear(88 + lvl * 24, 20)
+    this.hero.shieldT = Math.max(this.hero.shieldT, 2.5 + lvl * 0.4)
+    this.floatText(this.hero.x, this.hero.y - 44, 'OSSUARY LANCE', '#e9ecef', 22)
+  }
+
+  private castCorpseCathedral(lvl: number) {
+    if (this.corpses.length === 0) {
+      this.floatText(this.hero.x, this.hero.y - 38, 'NO CORPSES', '#adb5bd', 16)
+      return
+    }
+    if (!this.beginActive('necro-corpse-cathedral')) return
+    const corpses = this.corpses
+      .filter((corpse) => Math.hypot(corpse.x - this.hero.x, corpse.y - this.hero.y) < 650)
+      .slice(0, 12)
+    for (const corpse of corpses) this.detonateCorpse(corpse, 58 + lvl * 18, 135)
+    this.floatText(this.hero.x, this.hero.y - 48, 'CORPSE CATHEDRAL', '#69db7c', 22)
+  }
+
+  private castCrimsonCovenant(lvl: number) {
+    if (!this.beginActive('necro-crimson-covenant')) return
+    this.bloodNova(280, 72 + lvl * 21, 0.2)
+    this.skeletonFrenzyT = Math.max(this.skeletonFrenzyT, 3 + lvl * 0.4)
+    this.floatText(this.hero.x, this.hero.y - 48, 'CRIMSON COVENANT', '#ff8787', 22)
+  }
+
+  private castWitheringArmy(lvl: number) {
+    if (!this.beginActive('necro-withering-army')) return
+    for (const e of this.enemies) e.slowT = Math.max(e.slowT, 5 + lvl * 0.5)
+    this.skeletonFrenzyT = 6 + lvl * 0.7
+    this.floatText(this.hero.x, this.hero.y - 48, 'WITHERING ARMY', '#8ce99a', 22)
+  }
+
+  private castArmyOfTheDead(lvl: number) {
+    if (!this.beginActive('necro-army-of-the-dead')) return
+    const corpsePower = Math.min(8, this.corpses.length)
+    this.corpses.splice(0, corpsePower)
+    for (let i = 0; i < 6 + corpsePower; i++) this.raiseSkeleton(lvl + 3, true, 16)
+    this.skeletonFrenzyT = 8
+    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: 340, life: 0.8, color: 'rgba(80,210,110,0.75)' })
+    this.floatText(this.hero.x, this.hero.y - 54, 'ARMY OF THE DEAD', '#b2f2bb', 26)
+    this.shake(14)
+  }
+
+  private raiseSkeleton(lvl: number, empowered = false, capOverride?: number) {
+    const mastery = this.owned('necro-skeleton-mastery')?.level ?? 0
+    const raiseLevel = this.owned('necro-raise-skeleton')?.level
+      ?? this.owned('necro-skeleton-legion')?.level
+      ?? this.owned('necro-army-of-the-dead')?.level
+      ?? lvl
+    const cap = capOverride ?? 2 + raiseLevel + mastery
+    if (this.skeletons.length >= cap) return
+    const angle = Math.random() * Math.PI * 2
+    const distance = 36 + Math.random() * 30
+    this.skeletons.push({
+      x: this.hero.x + Math.cos(angle) * distance,
+      y: this.hero.y + Math.sin(angle) * distance,
+      damage: (8 + lvl * 4 + mastery * 4) * (empowered ? 1.45 : 1),
+      speed: 175 + mastery * 12,
+      attackCd: Math.random() * 0.4,
+      phase: Math.random() * Math.PI * 2,
+      empowered,
+    })
+  }
+
+  private fireBoneSpear(damage: number, pierce: number) {
+    const d = this.aimDir()
+    this.projectiles.push(this.mkProj(
+      this.hero.x, this.hero.y - 8, d.x * 620, d.y * 620, damage, true,
+      { r: 9, pierce, color: '#e9ecef' },
+    ))
+  }
+
+  private nearestCorpse(): Corpse | undefined {
+    let best: Corpse | undefined
+    let bestDistance = Infinity
+    for (const corpse of this.corpses) {
+      const distance = Math.hypot(corpse.x - this.mouse.x, corpse.y - this.mouse.y)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = corpse
+      }
+    }
+    return best
+  }
+
+  private detonateCorpse(corpse: Corpse, damage: number, radius: number) {
+    const index = this.corpses.indexOf(corpse)
+    if (index >= 0) this.corpses.splice(index, 1)
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - corpse.x, e.y - corpse.y) < radius + e.radius) {
+        this.damageEnemy(e, damage, true, true)
+      }
+    }
+    const armor = this.owned('necro-bone-armor')?.level ?? 0
+    if (armor > 0) this.hero.shieldT = Math.max(this.hero.shieldT, 0.8 + armor * 0.3)
+    this.rings.push({ x: corpse.x, y: corpse.y, r: 8, maxR: radius, life: 0.4, color: 'rgba(105,220,125,0.7)' })
+    this.shake(5)
+  }
+
+  private bloodNova(radius: number, damage: number, healRatio: number) {
+    let hits = 0
+    for (const e of this.enemies) {
+      if (Math.hypot(e.x - this.hero.x, e.y - this.hero.y) < radius + e.radius) {
+        hits++
+        this.damageEnemy(e, damage, true, true)
+      }
+    }
+    const pact = this.owned('necro-blood-pact')?.level ?? 0
+    const healing = hits * damage * (healRatio + pact * 0.015)
+    this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + healing)
+    this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: radius, life: 0.5, color: 'rgba(210,45,75,0.75)' })
+  }
+
   private mkProj(
     x: number, y: number, vx: number, vy: number, damage: number, friendly: boolean,
     opts?: { r?: number; life?: number; radius?: number; pierce?: number; homing?: boolean; spin?: number; color?: string },
@@ -1304,6 +1514,15 @@ export class GameEngine {
       const gainedRage = Math.round(baseRage * (1 + furyLevel * 0.15) + bleedBonus + ramRefund)
       this.hero.rage = Math.min(this.stats.maxRage, this.hero.rage + gainedRage)
       this.floatText(e.x, e.y - e.radius - 14, `+${gainedRage} RAGE`, '#ff922b', 14)
+    } else if (this.classId === 'necromancer') {
+      const harvest = this.owned('necro-grim-harvest')?.level ?? 0
+      const baseEssence = e.kind === 'boss' ? 30 : e.elite ? 16 : 7
+      const gainedEssence = Math.round(baseEssence * (1 + harvest * 0.16))
+      this.hero.rage = Math.min(this.stats.maxRage, this.hero.rage + gainedEssence)
+      this.floatText(e.x, e.y - e.radius - 14, `+${gainedEssence} ESSENCE`, '#69db7c', 14)
+      this.corpses.push({ x: e.x, y: e.y, life: 24 })
+      if (this.corpses.length > 30) this.corpses.shift()
+      if (harvest > 0 && Math.random() < harvest * 0.06) this.raiseSkeleton(harvest)
     }
     if (e.elite) {
       this.eliteKills++
@@ -1560,6 +1779,9 @@ export class GameEngine {
     // Health always regenerates. Mage Mana also recovers continuously.
     h.hp = Math.min(s.maxHp, h.hp + s.hpRegen * dt)
     if (this.classId === 'mage') h.rage = Math.min(s.maxRage, h.rage + s.manaRegen * dt)
+    this.skeletonFrenzyT = Math.max(0, this.skeletonFrenzyT - dt)
+    for (const corpse of this.corpses) corpse.life -= dt
+    this.corpses = this.corpses.filter((corpse) => corpse.life > 0)
 
     // cooldowns
     h.dashCd = Math.max(0, h.dashCd - dt)
@@ -1686,13 +1908,13 @@ export class GameEngine {
     }
 
     // Warriors cleave in melee; Mages automatically fire a ranged wand bolt.
-    const attackTarget = this.nearestEnemy(this.classId === 'mage' ? 520 : s.swordRange + 50)
+    const attackTarget = this.nearestEnemy(this.classId === 'warrior' ? s.swordRange + 50 : 520)
     if (attackTarget) {
       h.attackTimer -= dt
       if (h.attackTimer <= 0) {
         const furyLevel = h.furyT > 0 ? (this.owned('power')?.level ?? 0) : 0
         h.attackTimer = s.attackInterval / (1 + furyLevel * 0.1)
-        if (this.classId === 'mage') this.mageWandBolt(attackTarget)
+        if (this.classId !== 'warrior') this.mageWandBolt(attackTarget)
         else this.swordSwing(attackTarget)
       }
     } else {
@@ -1737,6 +1959,7 @@ export class GameEngine {
     this.flash = Math.max(0, this.flash - dt * 2.5)
 
     this.updateEnemies(dt)
+    this.updateSkeletons(dt)
     this.updatePickups(dt)
     this.updateProjectiles(dt)
     this.updateMeteors(dt)
@@ -1876,7 +2099,7 @@ export class GameEngine {
       h.x, h.y - 10,
       Math.cos(angle) * 480, Math.sin(angle) * 480,
       this.stats.swordDamage, true,
-      { r: 6, homing: true, color: '#8ec5ff' },
+      { r: 6, homing: true, color: this.classId === 'necromancer' ? '#69db7c' : '#8ec5ff' },
     ))
   }
 
@@ -2056,6 +2279,46 @@ export class GameEngine {
     this.enemies = this.enemies.filter((e) => e.hp > 0)
   }
 
+  private updateSkeletons(dt: number) {
+    const command = this.owned('necro-dark-command')?.level ?? 0
+    const frenzy = this.skeletonFrenzyT > 0 ? 1.75 : 1
+    for (let index = 0; index < this.skeletons.length; index++) {
+      const skeleton = this.skeletons[index]
+      skeleton.phase += dt * 7
+      skeleton.attackCd = Math.max(0, skeleton.attackCd - dt * frenzy * (1 + command * 0.1))
+      const target = this.nearestEnemyTo(skeleton.x, skeleton.y)
+      if (target && target.hp > 0) {
+        const dx = target.x - skeleton.x
+        const dy = target.y - skeleton.y
+        const distance = Math.hypot(dx, dy)
+        if (distance > target.radius + 25) {
+          const speed = skeleton.speed * (this.skeletonFrenzyT > 0 ? 1.25 : 1)
+          skeleton.x += (dx / distance) * speed * dt
+          skeleton.y += (dy / distance) * speed * dt
+        } else if (skeleton.attackCd <= 0) {
+          skeleton.attackCd = Math.max(0.28, 0.9 - command * 0.07)
+          this.damageEnemy(target, skeleton.damage, true, true)
+          const pact = this.owned('necro-blood-pact')?.level ?? 0
+          if (pact > 0) {
+            this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + skeleton.damage * pact * 0.012)
+          }
+          this.floatText(target.x, target.y - target.radius - 8, '🦴', '#e9ecef', 13)
+        }
+      } else {
+        const orbitAngle = (index / Math.max(1, this.skeletons.length)) * Math.PI * 2 + this.floorPhase * 0.35
+        const followX = this.hero.x + Math.cos(orbitAngle) * (55 + (index % 3) * 16)
+        const followY = this.hero.y + Math.sin(orbitAngle) * (40 + (index % 3) * 12)
+        const dx = followX - skeleton.x
+        const dy = followY - skeleton.y
+        const distance = Math.hypot(dx, dy)
+        if (distance > 6) {
+          skeleton.x += (dx / distance) * skeleton.speed * dt
+          skeleton.y += (dy / distance) * skeleton.speed * dt
+        }
+      }
+    }
+  }
+
   private updateProjectiles(dt: number) {
     const h = this.hero
     for (const p of this.projectiles) {
@@ -2097,6 +2360,7 @@ export class GameEngine {
     let best: Enemy | null = null
     let bestD = Infinity
     for (const e of this.enemies) {
+      if (e.hp <= 0) continue
       const d = (e.x - x) ** 2 + (e.y - y) ** 2
       if (d < bestD) { bestD = d; best = e }
     }
@@ -2319,6 +2583,10 @@ export class GameEngine {
 
     // ground loot pickups
     this.drawPickups()
+
+    // Necromancer corpses and summoned army
+    for (const corpse of this.corpses) this.drawCorpse(corpse)
+    for (const skeleton of this.skeletons) this.drawSkeleton(skeleton)
 
     // enemies
     ctx.textAlign = 'center'
@@ -2959,6 +3227,53 @@ export class GameEngine {
     }
   }
 
+  private drawCorpse(corpse: Corpse) {
+    const ctx = this.ctx
+    ctx.save()
+    ctx.globalAlpha = Math.min(0.8, corpse.life / 2)
+    ctx.fillStyle = 'rgba(35,45,40,0.75)'
+    ctx.beginPath(); ctx.ellipse(corpse.x, corpse.y + 8, 17, 8, -0.18, 0, Math.PI * 2); ctx.fill()
+    ctx.strokeStyle = '#adb5bd'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(corpse.x - 9, corpse.y + 3); ctx.lineTo(corpse.x + 9, corpse.y + 11)
+    ctx.moveTo(corpse.x + 8, corpse.y + 1); ctx.lineTo(corpse.x - 8, corpse.y + 12)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  private drawSkeleton(skeleton: Skeleton) {
+    const ctx = this.ctx
+    const bob = Math.sin(skeleton.phase) * 2
+    ctx.save()
+    ctx.translate(skeleton.x, skeleton.y - bob)
+    if (skeleton.empowered) {
+      ctx.shadowColor = '#69db7c'
+      ctx.shadowBlur = 13
+    }
+    this.drawShadow(0, 19, 13)
+    ctx.strokeStyle = skeleton.empowered ? '#d3f9d8' : '#e9ecef'
+    ctx.fillStyle = '#f1f3f5'
+    ctx.lineWidth = 3
+    ctx.lineCap = 'round'
+    ctx.beginPath(); ctx.arc(0, -13, 8, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = '#343a40'
+    ctx.beginPath(); ctx.arc(-3, -15, 1.5, 0, Math.PI * 2); ctx.arc(3, -15, 1.5, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(0, -5); ctx.lineTo(0, 12)
+    ctx.moveTo(-8, 0); ctx.lineTo(8, 0)
+    ctx.moveTo(0, 12); ctx.lineTo(-7, 21)
+    ctx.moveTo(0, 12); ctx.lineTo(7, 21)
+    ctx.moveTo(8, 0); ctx.lineTo(13, 9)
+    ctx.stroke()
+    ctx.strokeStyle = '#ced4da'
+    ctx.lineWidth = 1.5
+    for (let y = -2; y <= 7; y += 4) {
+      ctx.beginPath(); ctx.moveTo(-6, y); ctx.lineTo(6, y); ctx.stroke()
+    }
+    ctx.restore()
+  }
+
   private drawHero() {
     const ctx = this.ctx
     const h = this.hero
@@ -3113,6 +3428,7 @@ export class GameEngine {
       maxRage: Math.round(s.maxRage),
       className: CLASSES[this.classId].name,
       resourceName: CLASSES[this.classId].resourceName,
+      minionCount: this.skeletons.length,
       time: this.survTime,
       gold: this.gold,
       stage: this.stage,
