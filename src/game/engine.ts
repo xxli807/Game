@@ -42,6 +42,16 @@ interface Vec {
   y: number
 }
 
+type HeroFaceDir =
+  | 'up'
+  | 'upRight'
+  | 'right'
+  | 'downRight'
+  | 'down'
+  | 'downLeft'
+  | 'left'
+  | 'upLeft'
+
 interface Hero {
   x: number
   y: number
@@ -66,7 +76,7 @@ interface Hero {
   invuln: number
   walkPhase: number
   facing: number // 1 = right, -1 = left (side view flip)
-  faceDir: 'up' | 'down' | 'left' | 'right'
+  faceDir: HeroFaceDir
   moving: boolean
 }
 
@@ -279,6 +289,8 @@ export class GameEngine {
   private heroWalkDown: HTMLImageElement[] = []
   private heroWalkSide: HTMLImageElement[] = []
   private heroWalkUp: HTMLImageElement[] = []
+  private heroWalkUpRight: HTMLImageElement[] = []
+  private heroWalkDownRight: HTMLImageElement[] = []
   private enemyImgs: Partial<Record<EnemyKind, HTMLImageElement>> = {}
   private cinderMawRun: HTMLImageElement[] = []
 
@@ -341,9 +353,11 @@ export class GameEngine {
     }
     this.heroTurn = Array.from({ length: 4 }, (_, index) => load(`hero_ashen_turn_${index + 1}`))
     this.heroAtk = Array.from({ length: 6 }, (_, index) => load(`hero_ashen_attack_${index + 1}`))
-    this.heroWalkDown = []
-    this.heroWalkSide = []
-    this.heroWalkUp = []
+    this.heroWalkDown = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_s_${index + 1}`))
+    this.heroWalkSide = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_e_${index + 1}`))
+    this.heroWalkUp = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_up_${index + 1}`))
+    this.heroWalkUpRight = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_ne_${index + 1}`))
+    this.heroWalkDownRight = Array.from({ length: 8 }, (_, index) => load(`hero_ashen_walk_se_${index + 1}`))
     const enemyFile: Record<EnemyKind, string> = {
       grunt: 'enemy_goblin',
       fast: 'enemy_cinder_maw',
@@ -1466,9 +1480,7 @@ export class GameEngine {
     }
     // flip left/right whenever there's a clear horizontal component
     if (Math.abs(fdx) > 0.001) h.facing = fdx < 0 ? -1 : 1
-    const nextFaceDir: Hero['faceDir'] = Math.abs(fdx) >= Math.abs(fdy)
-      ? (fdx < 0 ? 'left' : 'right')
-      : (fdy < 0 ? 'up' : 'down')
+    const nextFaceDir = this.faceDirection(fdx, fdy)
     if (nextFaceDir !== h.faceDir) {
       this.heroTurnFrom = this.faceFrameIndex(h.faceDir)
       this.heroTurnTo = this.faceFrameIndex(nextFaceDir)
@@ -1594,8 +1606,57 @@ export class GameEngine {
 
   private faceFrameIndex(direction: Hero['faceDir']): number {
     if (direction === 'down') return 0
+    if (direction === 'downLeft' || direction === 'downRight') return 1
+    if (direction === 'left' || direction === 'right') return 2
     if (direction === 'up') return 3
-    return 2
+    return 3
+  }
+
+  private faceDirection(dx: number, dy: number): HeroFaceDir {
+    const directions: HeroFaceDir[] = [
+      'right', 'downRight', 'down', 'downLeft',
+      'left', 'upLeft', 'up', 'upRight',
+    ]
+    const octant = (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8
+    return directions[octant]
+  }
+
+  private faceVector(direction: HeroFaceDir): Vec {
+    const diagonal = Math.SQRT1_2
+    switch (direction) {
+      case 'up': return { x: 0, y: -1 }
+      case 'upRight': return { x: diagonal, y: -diagonal }
+      case 'right': return { x: 1, y: 0 }
+      case 'downRight': return { x: diagonal, y: diagonal }
+      case 'down': return { x: 0, y: 1 }
+      case 'downLeft': return { x: -diagonal, y: diagonal }
+      case 'left': return { x: -1, y: 0 }
+      case 'upLeft': return { x: -diagonal, y: -diagonal }
+    }
+  }
+
+  private heroWalkFrames(direction: HeroFaceDir): HTMLImageElement[] {
+    switch (direction) {
+      case 'up': return this.heroWalkUp
+      case 'upRight':
+      case 'upLeft': return this.heroWalkUpRight
+      case 'right':
+      case 'left': return this.heroWalkSide
+      case 'downRight':
+      case 'downLeft': return this.heroWalkDownRight
+      case 'down': return this.heroWalkDown
+    }
+  }
+
+  private mirrorHeroDirection(direction: HeroFaceDir): boolean {
+    return direction === 'left' || direction === 'upLeft' || direction === 'downLeft'
+  }
+
+  private cardinalHeroDirection(direction: HeroFaceDir): 'up' | 'down' | 'left' | 'right' {
+    if (direction === 'up') return 'up'
+    if (direction === 'down') return 'down'
+    if (direction === 'left' || direction === 'upLeft' || direction === 'downLeft') return 'left'
+    return 'right'
   }
 
   private swordSwing(target: Enemy | null) {
@@ -1604,7 +1665,9 @@ export class GameEngine {
     // aim at the nearest foe; if none, sweep in the direction we face/aim
     const angle = target
       ? Math.atan2(target.y - h.y, target.x - h.x)
-      : (h.moving ? Math.atan2(h.faceDir === 'up' ? -1 : h.faceDir === 'down' ? 1 : 0, h.faceDir === 'left' ? -1 : h.faceDir === 'right' ? 1 : 0) : h.aim)
+      : (h.moving
+        ? Math.atan2(this.faceVector(h.faceDir).y, this.faceVector(h.faceDir).x)
+        : h.aim)
     // alternate the sweep direction each swing for a lively back-and-forth
     this.swingFlip = -this.swingFlip
     h.swingAngle = angle
@@ -2712,9 +2775,10 @@ export class GameEngine {
       const frames = this.heroAtk
       const framesReady = frames.length === 6 && frames.every((frame) => this.ready(frame))
       const turnFramesReady = this.heroTurn.length === 4 && this.heroTurn.every((frame) => this.ready(frame))
+      const rearFacing = h.faceDir === 'up' || h.faceDir === 'upLeft' || h.faceDir === 'upRight'
       let img: HTMLImageElement | undefined = this.heroImg
       let useFrames = false
-      if (swinging && framesReady && h.faceDir !== 'up') {
+      if (swinging && framesReady && !rearFacing) {
         img = frames[Math.min(frames.length - 1, Math.floor(st * frames.length))]
         useFrames = true
       } else if (this.heroTurnT > 0 && turnFramesReady) {
@@ -2722,23 +2786,26 @@ export class GameEngine {
         const frameIndex = Math.round(this.heroTurnFrom + (this.heroTurnTo - this.heroTurnFrom) * progress)
         img = this.heroTurn[Math.max(0, Math.min(this.heroTurn.length - 1, frameIndex))]
       } else {
-        // Use the generated front, side, and back views for directional readability.
-        const key = h.faceDir === 'left' || h.faceDir === 'right'
-          ? 'side'
-          : h.faceDir === 'up' ? 'up' : 'down'
-        const dir = this.heroDir[key]
-        if (this.ready(dir)) img = dir
+        const diagonal = h.faceDir === 'upLeft' || h.faceDir === 'upRight'
+          || h.faceDir === 'downLeft' || h.faceDir === 'downRight'
+        const diagonalIdle = diagonal ? this.heroWalkFrames(h.faceDir)[0] : undefined
+        if (this.ready(diagonalIdle)) {
+          img = diagonalIdle
+        } else {
+          const cardinal = this.cardinalHeroDirection(h.faceDir)
+          const key = cardinal === 'left' || cardinal === 'right' ? 'side' : cardinal
+          const dir = this.heroDir[key]
+          if (this.ready(dir)) img = dir
+        }
       }
 
-      // Walk cycle. Prefer real 4-frame walk art; otherwise fall back to a procedural body rock.
+      // Walk cycle. Prefer generated frame art; otherwise fall back to a procedural body rock.
       const walking = h.moving && !useFrames
       const wp = h.walkPhase
       let useWalkFrames = false
       if (walking) {
-        const set = h.faceDir === 'left' || h.faceDir === 'right' ? this.heroWalkSide
-          : h.faceDir === 'up' ? this.heroWalkUp
-          : this.heroWalkDown
-        const rdy = set.filter((a) => this.ready(a)) // however many frames exist (2 or 4)
+        const set = this.heroWalkFrames(h.faceDir)
+        const rdy = set.filter((a) => this.ready(a))
         if (rdy.length >= 2) {
           const n = rdy.length
           img = rdy[Math.floor((wp * n) / (Math.PI * 2)) % n] // step through the frames over one stride
@@ -2761,12 +2828,13 @@ export class GameEngine {
         // Horizontal mirror: attack frames & the side view flip to match facing.
         let flip = 1
         if (useFrames) flip = h.facing
-        else if (h.faceDir === 'left') flip = -1
+        else if (this.mirrorHeroDirection(h.faceDir)) flip = -1
         // Rotation only drives the back-facing (up) swing; the frames animate themselves.
         const rot = useFrames ? 0 : swing * 0.5 * h.swingDir
         // Small forward lunge on the strike so the hit reads.
-        const lx = (h.faceDir === 'left' ? -1 : h.faceDir === 'right' ? 1 : 0) * swing * 5
-        const ly = (h.faceDir === 'up' ? -1 : h.faceDir === 'down' ? 1 : 0) * swing * 4
+        const face = this.faceVector(h.faceDir)
+        const lx = face.x * swing * 5
+        const ly = face.y * swing * 4
         const targetH = 82
         const w = targetH * (img.naturalWidth / img.naturalHeight)
         const chest = targetH * 0.6
@@ -2803,7 +2871,7 @@ export class GameEngine {
         x: h.x, y: h.y, facing: h.facing, walkPhase: h.walkPhase, moving: h.moving,
         swingT: h.swingT, swingDur: h.swingMax, swingAngle: h.swingAngle, swingDir: h.swingDir, aim: h.aim,
         swordTier: this.swordTier, styleId: this.swordStyleId, time: this.floorPhase,
-        invuln: h.invuln, shield: h.shieldT > 0, faceDir: h.faceDir,
+        invuln: h.invuln, shield: h.shieldT > 0, faceDir: this.cardinalHeroDirection(h.faceDir),
       })
       ctx.restore()
     }
