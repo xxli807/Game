@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "dev:v2": "TARGET=game2 vite",
+    "build": "node scripts/build.mjs",
+    "build:v1": "TARGET=game1 vite build",
+    "build:v2": "TARGET=game2 vite build",
+    "preview": "vite preview",
+    "preview:v2": "TARGET=game2 vite preview"
   },
   "dependencies": {
     "react": "^18.3.1",
