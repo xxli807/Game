@@ -24,6 +24,7 @@ export interface Layer {
   name: string
   biome: Biome
   lord: string // the layer-lord (boss) — a fallen champion you both knew
+  teaser: string // what Cael will say of it before you've been there
   relic: LayerRelic // a story-themed boon found only in this layer
   enter: string[] // Cael, on entering the layer
   lordIntro: string[] // Cael, when the layer-lord appears (boss stage)
@@ -31,7 +32,7 @@ export interface Layer {
 
 export const LAYERS: Layer[] = [
   {
-    index: 1, numeral: 'I', name: 'The Sunken Keep', biome: 'dungeon',
+    index: 1, numeral: 'I', name: 'The Sunken Keep', teaser: 'Drowned halls, and something that still keeps watch', biome: 'dungeon',
     lord: 'Sir Roderin, the First to Fall',
     relic: { key: 'keepstone', name: 'Keepstone Ward', icon: '🏰', desc: '+80 max health and steady regeneration — the old keep still shelters its own.' },
     enter: [
@@ -44,7 +45,7 @@ export const LAYERS: Layer[] = [
     ],
   },
   {
-    index: 2, numeral: 'II', name: 'The Rotwood', biome: 'forest',
+    index: 2, numeral: 'II', name: 'The Rotwood', teaser: 'A greenwood gone wrong, below the Keep', biome: 'forest',
     lord: 'Maren the Green',
     relic: { key: 'thornheart', name: 'Thornheart', icon: '🌿', desc: 'Your strikes drink life and the thorns bite back — lifesteal and retaliation.' },
     enter: [
@@ -57,7 +58,7 @@ export const LAYERS: Layer[] = [
     ],
   },
   {
-    index: 3, numeral: 'III', name: 'The Frozen Vaults', biome: 'snow',
+    index: 3, numeral: 'III', name: 'The Frozen Vaults', teaser: 'Where the kingdom locked away what it feared', biome: 'snow',
     lord: 'Archivist Yll',
     relic: { key: 'rimebound', name: 'Rimebound Edge', icon: '🧊', desc: 'Cold, patient, exact — a sharp rise in critical chance and critical damage.' },
     enter: [
@@ -70,7 +71,7 @@ export const LAYERS: Layer[] = [
     ],
   },
   {
-    index: 4, numeral: 'IV', name: 'The Molten Heart', biome: 'volcano',
+    index: 4, numeral: 'IV', name: 'The Molten Heart', teaser: 'The wound at the bottom of the world', biome: 'volcano',
     lord: 'the Hollow King',
     relic: { key: 'emberwrath', name: 'Emberwrath', icon: '🔥', desc: "The Heart's fury in your arm — a heavy surge of sword damage." },
     enter: [

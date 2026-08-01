@@ -51,9 +51,11 @@ export default function MetaScreen({ meta, classId, onClassChange, onStart }: Pr
               <div key={layer.index} className={`descent-row${reached ? ' reached' : ''}`}>
                 <div className="descent-numeral">{layer.numeral}</div>
                 <div className="descent-body">
-                  <div className="descent-name">{reached ? layer.name : '???'}</div>
+                  <div className="descent-name">
+                    {reached ? layer.name : `Depth ${layer.numeral} — not yet walked`}
+                  </div>
                   <div className="descent-lord">
-                    {rested ? `✓ ${layer.lord} — at rest` : reached ? layer.lord : 'Undiscovered'}
+                    {rested ? `✓ ${layer.lord} — at rest` : reached ? layer.lord : layer.teaser}
                   </div>
                 </div>
                 <div className="descent-relic" title={layer.relic.name}>

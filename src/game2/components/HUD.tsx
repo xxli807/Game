@@ -1,8 +1,6 @@
 import { HudState, SKILLS } from '../game/types'
 
 export default function HUD({ state, onAbility }: { state: HudState; onAbility: (key: string) => void }) {
-  const hpPct = (state.hp / state.maxHp) * 100
-  const ragePct = (state.rage / state.maxRage) * 100
   const stagePct = (state.stageKills / state.stageEnemyTotal) * 100
   const remaining = Math.max(0, state.stageEnemyTotal - state.stageKills)
 
@@ -22,16 +20,8 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
       {/* survival clock */}
       <div className="clock">{mm}:{ss.toString().padStart(2, '0')}</div>
 
-      {/* top-left vitals */}
+      {/* top-left loadout (health & resource render on the character itself) */}
       <div className="hud-top">
-        <div className="vitals">
-          <Bar className="hp" pct={hpPct} label={`❤️ ${state.hp}/${state.maxHp}`} />
-          <Bar
-            className={state.resourceName === 'Mana' ? 'mana' : state.resourceName === 'Essence' ? 'essence' : 'rage'}
-            pct={ragePct}
-            label={`${state.resourceName === 'Mana' ? '💧' : state.resourceName === 'Essence' ? '🟢' : '🔥'} ${state.resourceName.toUpperCase()} ${state.rage}/${state.maxRage}`}
-          />
-        </div>
         <div className="weapons">
           {state.skills.map((skill) => {
             const definition = SKILLS[skill.id]
@@ -88,11 +78,3 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
   )
 }
 
-function Bar({ pct, label, className, thin }: { pct: number; label: string; className: string; thin?: boolean }) {
-  return (
-    <div className={`stat-bar ${thin ? 'thin' : ''}`}>
-      <div className={`stat-fill ${className}`} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
-      <span className="stat-label">{label}</span>
-    </div>
-  )
-}

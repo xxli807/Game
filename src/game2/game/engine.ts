@@ -2788,7 +2788,7 @@ export class GameEngine {
 
   private drawMinimap() {
     const ctx = this.ctx
-    const w = 150
+    const w = 96
     const h = w * (WORLD_H / WORLD_W)
     const x = WIDTH - w - 12
     const y = HEIGHT - h - 12
@@ -3484,6 +3484,33 @@ export class GameEngine {
       })
       ctx.restore()
     }
+    this.drawHeroBars()
+  }
+
+  /** Health + resource bars floating just above the hero, matched to their width. */
+  private drawHeroBars() {
+    const ctx = this.ctx
+    const h = this.hero
+    const s = this.stats
+    const w = 46 // roughly the character's shoulder width on screen
+    const x = h.x - w / 2
+    const y = h.y - 62
+    const barH = 4
+    const gap = 2
+    const hpPct = Math.max(0, Math.min(1, h.hp / s.maxHp))
+    const resPct = s.maxRage > 0 ? Math.max(0, Math.min(1, h.rage / s.maxRage)) : 0
+    const resColor = this.classId === 'mage' ? '#74c0fc' : this.classId === 'necromancer' ? '#8ce99a' : '#ffa94d'
+    ctx.save()
+    // backing plate
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    ctx.fillRect(x - 1, y - 1, w + 2, barH * 2 + gap + 2)
+    // health
+    ctx.fillStyle = hpPct > 0.5 ? '#69db7c' : hpPct > 0.25 ? '#ffd43b' : '#ff6b6b'
+    ctx.fillRect(x, y, w * hpPct, barH)
+    // class resource (Rage / Mana / Essence)
+    ctx.fillStyle = resColor
+    ctx.fillRect(x, y + barH + gap, w * resPct, barH)
+    ctx.restore()
   }
 
   // ---------- emit HUD ----------
