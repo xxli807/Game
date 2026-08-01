@@ -6,17 +6,39 @@ import HUD from './components/HUD'
 import LevelUpModal from './components/LevelUpModal'
 import MetaScreen from './components/MetaScreen'
 import Dialogue from './components/Dialogue'
-import { StoryEvent, DEATH_LINES, VICTORY_LINES, randomLine } from './game/story'
+import {
+  StoryEvent, DEATH_LINES, VICTORY_LINES, randomLine,
+  depthForStage, isLordStage, layerForStage, FINAL_STAGE,
+} from './game/story'
 
 export default function App() {
   const [meta, setMeta] = useState<MetaState>(() => loadMeta())
   const [inRun, setInRun] = useState(false)
   const [classId, setClassId] = useState<ClassId>('warrior')
 
+  // Record story progress as the descent happens: how deep, which champions
+  // are at rest, and (on the final stage) the kingdom reclaimed.
   const handleStageCleared = (stage: number) => {
     setMeta((m) => {
-      if (stage <= m.bestStage) return m
-      const next = { ...m, bestStage: stage }
+      const layer = layerForStage(stage)
+      const next: MetaState = {
+        ...m,
+        bestStage: Math.max(m.bestStage, stage),
+        deepestLayer: Math.max(m.deepestLayer, depthForStage(stage)),
+        lordsLaidToRest: isLordStage(stage) && !m.lordsLaidToRest.includes(layer.relic.key)
+          ? [...m.lordsLaidToRest, layer.relic.key]
+          : m.lordsLaidToRest,
+        victories: stage >= FINAL_STAGE ? m.victories + 1 : m.victories,
+      }
+      saveMeta(next)
+      return next
+    })
+  }
+
+  const handleRelicFound = (key: string) => {
+    setMeta((m) => {
+      if (m.relicsFound.includes(key)) return m
+      const next = { ...m, relicsFound: [...m.relicsFound, key] }
       saveMeta(next)
       return next
     })
@@ -48,6 +70,7 @@ export default function App() {
       <GameScreen
         classId={classId}
         onStageCleared={handleStageCleared}
+        onRelicFound={handleRelicFound}
         onRunEnd={handleRunEnd}
         onExit={() => setInRun(false)}
       />
@@ -58,11 +81,13 @@ export default function App() {
 function GameScreen({
   classId,
   onStageCleared,
+  onRelicFound,
   onRunEnd,
   onExit,
 }: {
   classId: ClassId
   onStageCleared: (stage: number) => void
+  onRelicFound: (key: string) => void
   onRunEnd: (r: { clearedStage: number; kills: number }) => void
   onExit: () => void
 }) {
@@ -111,6 +136,12 @@ function GameScreen({
     return () => engine.destroy()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // remember relics of Aldermere recovered during the run
+  useEffect(() => {
+    for (const key of hud?.relics ?? []) onRelicFound(key)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hud?.relics?.length])
 
   return (
     <div className="fs-wrap" ref={wrapRef}>

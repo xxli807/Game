@@ -15,7 +15,7 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
       <div className={`stage-strip${state.bossStage ? ' stage-strip-boss' : ''}`}>
         <div className="stage-strip-fill" style={{ width: `${Math.max(0, Math.min(100, stagePct))}%` }} />
         <span className="stage-strip-label">
-          {state.bossStage ? 'BOSS ' : ''}STAGE {state.stage} · {state.stageKills}/{state.stageEnemyTotal}
+          {state.bossStage ? '☠ LAYER-LORD · ' : ''}STAGE {state.stage}/{state.finalStage} · {state.stageKills}/{state.stageEnemyTotal}
         </span>
       </div>
 
@@ -49,7 +49,9 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
       <div className="hud-info">
         <div className="chip">⚔️ {state.className}</div>
         <div className="chip">👹 {remaining} remaining</div>
-        <div className="chip">📍 {state.biome}</div>
+        <div className="chip chip-depth" title="How deep into the Depths you are">
+          🕯️ Depth {state.depth}/{state.maxDepth} · {state.biome}
+        </div>
         <div className="chip">💀 {state.kills}</div>
         {state.className === 'Necromancer' && <div className="chip">☠️ {state.minionCount} summoned</div>}
         <div className="chip">🪙 {state.gold}</div>

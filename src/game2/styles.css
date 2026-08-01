@@ -727,3 +727,44 @@ body {
 .cael-line { font-style: italic; color: #ffd9b0; line-height: 1.5; margin: 6px 0 10px; }
 .cael-tag { font-style: normal; font-size: 12px; letter-spacing: 0.1em; color: #ffb45a; }
 .victory-card { border-color: rgba(255,200,90,0.6) !important; }
+
+/* ---------- The Last Ember (story hub) ---------- */
+.ember-screen { background: radial-gradient(90% 60% at 50% 0%, #2a1220 0%, #150a16 45%, #08050b 100%); }
+.ember-mark {
+  font-size: 46px; text-align: center; line-height: 1;
+  filter: drop-shadow(0 0 22px rgba(255,140,50,0.75));
+  animation: ember-flicker 2.6s ease-in-out infinite;
+}
+@keyframes ember-flicker {
+  0%,100% { opacity: 1; transform: translateY(0) scale(1); }
+  50% { opacity: 0.82; transform: translateY(-2px) scale(1.04); }
+}
+.ember-title { color: #ffd9a0 !important; text-shadow: 0 2px 26px rgba(255,140,50,0.45); }
+.ember-tagline { max-width: 44rem; margin: 0 auto; }
+.ember-story {
+  margin: 14px auto 4px; max-width: 46rem; padding: 14px 18px;
+  background: linear-gradient(180deg, rgba(40,20,30,0.6), rgba(20,10,18,0.6));
+  border: 1px solid rgba(255,160,80,0.22); border-radius: 14px;
+}
+.ember-chapter {
+  font-size: 11px; letter-spacing: 0.3em; color: #ff9a5c; font-weight: 700; margin-bottom: 6px;
+}
+.ember-recap { font-size: clamp(13px, 2.8vw, 15px); line-height: 1.55; opacity: 0.92; }
+.ember-cael { margin-top: 10px; font-style: italic; color: #ffd9b0; font-size: clamp(13px, 2.8vw, 15px); }
+.ember-cael-tag { font-style: normal; margin-left: 8px; font-size: 11px; letter-spacing: 0.1em; color: #ffb45a; }
+.descent-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.descent-row {
+  display: flex; align-items: center; gap: 12px; padding: 9px 14px;
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+  background: rgba(255,255,255,0.03); opacity: 0.45;
+}
+.descent-row.reached { opacity: 1; border-color: rgba(255,160,80,0.35); background: rgba(255,140,60,0.07); }
+.descent-numeral { font-size: 18px; font-weight: 800; color: #ffb45a; min-width: 28px; text-align: center; }
+.descent-body { flex: 1; min-width: 0; }
+.descent-name { font-weight: 700; font-size: clamp(13px, 3vw, 15px); }
+.descent-lord { font-size: 12px; opacity: 0.75; }
+.descent-relic { font-size: 20px; min-width: 24px; text-align: center; }
+.descend-btn { background: linear-gradient(180deg, #ff9a3c, #e2631b) !important; }
+
+/* depth pill in the HUD */
+.chip-depth { color: #ffb45a; border-color: rgba(255,160,80,0.45) !important; }

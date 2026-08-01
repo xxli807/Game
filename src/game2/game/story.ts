@@ -84,12 +84,28 @@ export const LAYERS: Layer[] = [
   },
 ]
 
-/** Bosses at stage 10/20/30/40; the Hollow King (40) is the finale. */
-export const FINAL_STAGE = 40
+/**
+ * The descent is short on purpose: a whole run fits a commute, and every run
+ * actually travels through all four layers of the story instead of stalling in
+ * the first one. Each layer ends with its layer-lord.
+ * Stage 3 = Roderin · 6 = Maren · 9 = Yll · 12 = the Hollow King (finale).
+ */
+export const STAGES_PER_LAYER = 3
+export const FINAL_STAGE = LAYERS.length * STAGES_PER_LAYER
 
 export function layerForStage(stage: number): Layer {
-  const i = Math.max(0, Math.min(LAYERS.length - 1, Math.floor((stage - 1) / 10)))
+  const i = Math.max(0, Math.min(LAYERS.length - 1, Math.floor((stage - 1) / STAGES_PER_LAYER)))
   return LAYERS[i]
+}
+
+/** A layer-lord waits at the end of every layer. */
+export function isLordStage(stage: number): boolean {
+  return stage % STAGES_PER_LAYER === 0
+}
+
+/** How deep the run has gone, 1..4. */
+export function depthForStage(stage: number): number {
+  return layerForStage(stage).index
 }
 
 export const OPENING: string[] = [
@@ -110,4 +126,52 @@ export const VICTORY_LINES: string[] = [
 
 export function randomLine(lines: string[]): string {
   return lines[Math.floor(Math.random() * lines.length)]
+}
+
+/** Cael when a layer-lord falls — the emotional payoff of each layer. */
+export const LORD_DOWN: string[][] = [
+  ['Rest easy, Roderin. You held the gate longer than any of us.'],
+  ["Sleep, Maren. The greenwood remembers you, even if it's rotted."],
+  ['Goodbye, Yll. You were right about everything, as usual.'],
+  ['...It’s over. The Hollow King is dead. Aldermere is ours again.'],
+]
+
+/** Short in-run barks — keep them rare so they land. */
+export const BARKS = {
+  lowHp: [
+    'Bleeding out is a TERRIBLE look on you. MOVE.',
+    "Don't you dare. I am NOT doing this alone.",
+    "That's too much blood. Even for you.",
+  ],
+  relic: [
+    'Old Aldermere craft. It still remembers whose side it’s on.',
+    'Take it. The kingdom owes you that much.',
+  ],
+  evolve: [
+    'Now THAT’S old Aldermere steel. Just like the drills.',
+    "Feels good, doesn't it? Don't let it go to your head.",
+  ],
+  swarm: [
+    'They just keep coming. Fine. More for us.',
+    'Whole lot of them. Stay moving.',
+  ],
+} as const
+
+/** One-line "story so far" for the Ember hub, based on how deep you've reached. */
+export function chapterRecap(deepestLayer: number, victories: number): string {
+  if (victories > 0) {
+    return 'The Hollow King has fallen and the throne stands empty — waiting for a rightful heir. Aldermere breathes again. But the Depths are patient, and the Ember still burns.'
+  }
+  switch (deepestLayer) {
+    case 0:
+      return 'The kingdom of Aldermere is hollowed out and silent. One knight still stands at the last ember, with a sword that will not let them rest.'
+    case 1:
+      return 'You have walked the drowned halls of the Sunken Keep and laid Sir Roderin to rest. Below, the rotted greenwood waits.'
+    case 2:
+      return "Roderin and Maren are at peace. The cold beneath the Rotwood runs deeper than either of you expected."
+    case 3:
+      return "Three champions laid to rest. Only the Molten Heart remains — and the thing wearing the king's crown."
+    default:
+      return 'The Heart is close. Cael has gone quiet, which is somehow worse.'
+  }
 }

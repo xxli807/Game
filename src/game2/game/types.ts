@@ -91,10 +91,18 @@ export interface MetaState {
   bestStage: number
   totalKills: number
   runs: number
+  // story progress — what the Ember hub remembers between descents
+  deepestLayer: number // 0..4, how far into the descent you've reached
+  lordsLaidToRest: string[] // relic/lord keys you've put to rest
+  relicsFound: string[]
+  victories: number
 }
 
 export function defaultMeta(): MetaState {
-  return { bestStage: 0, totalKills: 0, runs: 0 }
+  return {
+    bestStage: 0, totalKills: 0, runs: 0,
+    deepestLayer: 0, lordsLaidToRest: [], relicsFound: [], victories: 0,
+  }
 }
 
 // ---------- Class and run-based skill system ----------
@@ -331,6 +339,10 @@ export interface HudState {
   swordStyleName: string
   swordStyleIcon: string
   biome: string
+  depth: number // which layer of the descent (1..4)
+  maxDepth: number
+  finalStage: number
+  relics: string[]
   abilities: AbilityView[]
   skills: OwnedSkill[]
   cards: DraftChoice[]

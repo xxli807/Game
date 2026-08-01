@@ -23,7 +23,10 @@ import {
   SWORD_STYLES,
   randomSwordStyle,
 } from './sprites'
-import { StoryEvent, layerForStage, OPENING, FINAL_STAGE } from './story'
+import {
+  StoryEvent, LAYERS, layerForStage, isLordStage, depthForStage,
+  OPENING, FINAL_STAGE, LORD_DOWN, BARKS, randomLine,
+} from './story'
 
 // Canvas / viewport size (what the camera shows at once)
 export const WIDTH = 960
@@ -313,6 +316,7 @@ export class GameEngine {
   private layerIndex = -1
   private layerName = ''
   private relics = new Set<string>()
+  private barkedLowHp = false
   private spawnTimer = 0
   private swingFlip = 1
   private weapons: OwnedWeapon[] = []
@@ -527,6 +531,7 @@ export class GameEngine {
 
   /** Set the current layer from the stage; narrate layer changes and boss (layer-lord) stages. */
   private enterStage(stage: number) {
+    this.barkedLowHp = false
     const layer = layerForStage(stage)
     this.biome = layer.biome
     this.layerName = layer.name
@@ -534,7 +539,7 @@ export class GameEngine {
       this.layerIndex = layer.index - 1
       this.opts.onStory({ id: `layer-${layer.index}`, numeral: layer.numeral, title: layer.name, lines: layer.enter })
     }
-    if (stage % 10 === 0) {
+    if (isLordStage(stage)) {
       this.opts.onStory({ id: `lord-${stage}`, title: layer.lord, subtitle: 'LAYER-LORD', lines: layer.lordIntro })
     }
   }
@@ -628,7 +633,7 @@ export class GameEngine {
   }
 
   private stageEnemyTotal(stage = this.stage): number {
-    if (stage % 10 === 0) return 1
+    if (isLordStage(stage)) return 1
     return Math.min(this.MAX_STAGE_ENEMIES, 8 + stage * 2)
   }
 
@@ -641,7 +646,7 @@ export class GameEngine {
     this.hero.rage = this.classId === 'mage' ? this.stats.maxRage : 0
     this.status = 'playing'
     this.lastTs = performance.now()
-    if (stage % 10 === 0) {
+    if (isLordStage(stage)) {
       this.floatText(this.hero.x, this.hero.y - 70, `⚠ BOSS STAGE ${stage}!`, '#ff6b6b', 30)
       this.shake(14)
     } else {
@@ -659,6 +664,15 @@ export class GameEngine {
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
     this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + this.stats.maxHp * 0.12)
     this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${this.stage} CLEARED!`, '#69db7c', 30)
+    // A layer-lord just fell: Cael says goodbye to someone he knew.
+    if (isLordStage(this.stage)) {
+      const layer = layerForStage(this.stage)
+      this.opts.onStory({
+        id: `lord-down-${this.stage}`,
+        title: `${layer.lord} — at rest`,
+        lines: LORD_DOWN[layer.index - 1] ?? [],
+      })
+    }
     this.opts.onStageCleared(this.stage)
     this.buildChoices()
     this.emit()
@@ -1986,7 +2000,7 @@ export class GameEngine {
     const stageTotal = this.stageEnemyTotal()
     this.spawnTimer -= dt
     if (this.spawnTimer <= 0 && this.stageSpawned < stageTotal) {
-      if (this.stage % 10 === 0) {
+      if (isLordStage(this.stage)) {
         this.spawnStageBoss()
         this.stageSpawned = 1
       } else {
@@ -2479,6 +2493,11 @@ export class GameEngine {
       this.floatText(h.x, h.y - 42, `+${restored} MANA`, '#74c0fc', 16)
     }
     h.hp -= dmg
+    // Cael notices when you're about to die (once per stage, so it stays meaningful).
+    if (h.hp > 0 && h.hp < this.stats.maxHp * 0.25 && !this.barkedLowHp) {
+      this.barkedLowHp = true
+      this.floatText(h.x, h.y - 78, randomLine([...BARKS.lowHp]), '#ff8787', 17)
+    }
     if (h.counterT > 0) {
       const counterLevel = this.owned('heal')?.level ?? this.owned('tempest')?.level ?? 1
       const counterDamage = 24 + counterLevel * 10 + (this.owned('power')?.level ?? 0) * 8
@@ -3490,12 +3509,16 @@ export class GameEngine {
       stage: this.stage,
       stageKills: this.stageKills,
       stageEnemyTotal: this.stageEnemyTotal(),
-      bossStage: this.stage % 10 === 0,
+      bossStage: isLordStage(this.stage),
       kills: this.kills,
       swordTier: this.swordTier,
       swordStyleName: SWORD_STYLES[this.swordStyleId].name,
       swordStyleIcon: SWORD_STYLES[this.swordStyleId].icon,
       biome: this.layerName || BIOMES[this.biome].name,
+      depth: depthForStage(this.stage),
+      maxDepth: LAYERS.length,
+      finalStage: FINAL_STAGE,
+      relics: [...this.relics],
       abilities: ab,
       skills: this.skills.map((os) => ({ id: os.id, level: os.level })),
       cards: this.status === 'skillselect' ? this.choices : [],

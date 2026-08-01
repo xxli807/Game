@@ -1,6 +1,7 @@
 import { MetaState, defaultMeta } from './types'
 
-const KEY = 'sword-of-the-depths:meta'
+// v2 keeps its own save so the story progress never collides with v1's.
+const KEY = 'sword-of-the-depths:v2:meta'
 
 export function loadMeta(): MetaState {
   try {
@@ -13,6 +14,10 @@ export function loadMeta(): MetaState {
       bestStage: parsed.bestStage ?? legacy.bestWave ?? base.bestStage,
       totalKills: parsed.totalKills ?? base.totalKills,
       runs: parsed.runs ?? base.runs,
+      deepestLayer: parsed.deepestLayer ?? base.deepestLayer,
+      lordsLaidToRest: parsed.lordsLaidToRest ?? base.lordsLaidToRest,
+      relicsFound: parsed.relicsFound ?? base.relicsFound,
+      victories: parsed.victories ?? base.victories,
     }
   } catch {
     return defaultMeta()
