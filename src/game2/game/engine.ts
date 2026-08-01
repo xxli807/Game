@@ -23,6 +23,7 @@ import {
   SWORD_STYLES,
   randomSwordStyle,
 } from './sprites'
+import { StoryEvent, layerForStage, OPENING, FINAL_STAGE } from './story'
 
 // Canvas / viewport size (what the camera shows at once)
 export const WIDTH = 960
@@ -230,6 +231,7 @@ interface Opts {
   onState: (s: HudState) => void
   onRunEnd: (r: RunEnd) => void
   onStageCleared: (stage: number) => void
+  onStory: (e: StoryEvent) => void
 }
 
 // Ability-bar slots, in the order owned active skills fill them.
@@ -307,6 +309,10 @@ export class GameEngine {
   private swordTier = 1
   private swordStyleId: SwordStyleId = 'steel'
   private biome: Biome = 'dungeon'
+  // story descent: which layer (0..3) we're in, its display name, and collected relics
+  private layerIndex = -1
+  private layerName = ''
+  private relics = new Set<string>()
   private spawnTimer = 0
   private swingFlip = 1
   private weapons: OwnedWeapon[] = []
@@ -512,6 +518,25 @@ export class GameEngine {
     this.centerCamera()
     this.spawnTimer = 0
     this.status = 'playing'
+    // story: begin the descent — Cael's opening, then the first layer
+    this.layerIndex = -1
+    this.relics.clear()
+    this.opts.onStory({ id: 'opening', lines: OPENING })
+    this.enterStage(1)
+  }
+
+  /** Set the current layer from the stage; narrate layer changes and boss (layer-lord) stages. */
+  private enterStage(stage: number) {
+    const layer = layerForStage(stage)
+    this.biome = layer.biome
+    this.layerName = layer.name
+    if (layer.index - 1 !== this.layerIndex) {
+      this.layerIndex = layer.index - 1
+      this.opts.onStory({ id: `layer-${layer.index}`, numeral: layer.numeral, title: layer.name, lines: layer.enter })
+    }
+    if (stage % 10 === 0) {
+      this.opts.onStory({ id: `lord-${stage}`, title: layer.lord, subtitle: 'LAYER-LORD', lines: layer.lordIntro })
+    }
   }
 
   private applySwordStyle() {
@@ -622,10 +647,13 @@ export class GameEngine {
     } else {
       this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${stage}`, '#ffd43b', 28)
     }
+    this.enterStage(stage)
   }
 
   private completeStage() {
     if (this.status !== 'playing') return
+    // Reaching the Molten Heart's throne (final boss) is the win, not another draft.
+    if (this.stage >= FINAL_STAGE) { this.win(); return }
     this.status = 'skillselect'
     this.enemies = []
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
@@ -633,6 +661,15 @@ export class GameEngine {
     this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${this.stage} CLEARED!`, '#69db7c', 30)
     this.opts.onStageCleared(this.stage)
     this.buildChoices()
+    this.emit()
+  }
+
+  private win() {
+    this.status = 'victory'
+    this.enemies = []
+    this.floatText(this.hero.x, this.hero.y - 60, '👑 ALDERMERE RECLAIMED', '#ffd43b', 34)
+    this.opts.onStageCleared(this.stage)
+    this.opts.onRunEnd({ clearedStage: this.stage, kills: this.kills })
     this.emit()
   }
 
@@ -809,7 +846,7 @@ export class GameEngine {
       phase: Math.random() * Math.PI * 2,
       facing: -1,
       elite,
-      ebiome: regionAt(x, y),
+      ebiome: this.biome,
       slowT: 0,
       wCd: 0,
       bleedT: 0,
@@ -1028,9 +1065,20 @@ export class GameEngine {
     for (const os of this.skills) {
       if (SKILLS[os.id].kind === 'passive') this.applyPassive(s, os.id, os.level)
     }
+    for (const key of this.relics) this.applyRelic(s, key)
     this.stats = s
     if (this.hero) {
       if (s.maxHp > prevHp) this.hero.hp = Math.min(s.maxHp, this.hero.hp + (s.maxHp - prevHp))
+    }
+  }
+
+  /** Story layer relics — flat stat boons flavoured to each layer of the descent. */
+  private applyRelic(s: Stats, key: string) {
+    switch (key) {
+      case 'keepstone': s.maxHp += 80; s.hpRegen += 2; break
+      case 'thornheart': s.lifesteal += 0.08; s.thorns += 0.5; break
+      case 'rimebound': s.crit += 0.15; s.critMult += 0.4; break
+      case 'emberwrath': s.swordDamage *= 1.25; break
     }
   }
 
@@ -1733,6 +1781,20 @@ export class GameEngine {
       }
     }
 
+    // Layer relic: a story-themed boon unique to the current descent layer,
+    // offered (strongly) while you're in that layer and haven't taken it yet.
+    const relic = layerForStage(this.stage).relic
+    if (!this.relics.has(relic.key)) {
+      opts.push({
+        weight: 7,
+        choice: {
+          id: `relic-${relic.key}`, name: relic.name, icon: relic.icon,
+          desc: relic.desc, rarity: 'epic', tag: `✦ ${this.layerName}`,
+        },
+        apply: () => { this.relics.add(relic.key); this.recomputeStats() },
+      })
+    }
+
     // Fallback: if every slot is full & maxed, offer a small heal-up so the draft is never empty.
     if (opts.length === 0) {
       opts.push({
@@ -1883,13 +1945,7 @@ export class GameEngine {
     this.cam.x += (tcx - this.cam.x) * Math.min(1, dt * 6)
     this.cam.y += (tcy - this.cam.y) * Math.min(1, dt * 6)
 
-    // announce when the hero crosses into a new region
-    const region = regionAt(h.x, h.y)
-    if (region !== this.biome) {
-      this.biome = region
-      const p = BIOMES[region]
-      this.floatText(h.x, h.y - 60, `⚑ ${p.name}`, p.accent, 30)
-    }
+    // biome is fixed by the current descent layer (set in enterStage), not by roaming
 
     // standing in the lava lake burns you (a hazard that makes the map matter)
     this.lavaTick = Math.max(0, this.lavaTick - dt)
@@ -2839,7 +2895,7 @@ export class GameEngine {
     const y1 = this.cam.y + HEIGHT
     for (let gy = y0; gy < y1; gy += step) {
       for (let gx = x0; gx < x1; gx += step) {
-        const biome = regionAt(gx + 1, gy + 1)
+        const biome = this.biome // whole arena themed to the current descent layer
         const seed = ((gx * 73856093) ^ (gy * 19349663)) >>> 0
         const img = this.tileImgs[biome]
         if (img && img.complete && img.naturalWidth > 0) {
@@ -3439,7 +3495,7 @@ export class GameEngine {
       swordTier: this.swordTier,
       swordStyleName: SWORD_STYLES[this.swordStyleId].name,
       swordStyleIcon: SWORD_STYLES[this.swordStyleId].icon,
-      biome: BIOMES[this.biome].name,
+      biome: this.layerName || BIOMES[this.biome].name,
       abilities: ab,
       skills: this.skills.map((os) => ({ id: os.id, level: os.level })),
       cards: this.status === 'skillselect' ? this.choices : [],

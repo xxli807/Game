@@ -5,6 +5,8 @@ import { loadMeta, saveMeta } from './game/meta'
 import HUD from './components/HUD'
 import LevelUpModal from './components/LevelUpModal'
 import MetaScreen from './components/MetaScreen'
+import Dialogue from './components/Dialogue'
+import { StoryEvent, DEATH_LINES, VICTORY_LINES, randomLine } from './game/story'
 
 export default function App() {
   const [meta, setMeta] = useState<MetaState>(() => loadMeta())
@@ -70,6 +72,20 @@ function GameScreen({
   const endedRef = useRef(false)
   const [hud, setHud] = useState<HudState | null>(null)
 
+  // Cael's story dialogue: queued events, shown one at a time; the world pauses while one is up.
+  const [story, setStory] = useState<StoryEvent | null>(null)
+  const storyQueue = useRef<StoryEvent[]>([])
+  const storyActive = useRef(false)
+  const popStory = () => {
+    const next = storyQueue.current.shift()
+    if (next) { storyActive.current = true; setStory(next); engineRef.current?.pause() }
+    else { storyActive.current = false; setStory(null); engineRef.current?.resume() }
+  }
+  const pushStory = (e: StoryEvent) => {
+    storyQueue.current.push(e)
+    if (!storyActive.current) popStory()
+  }
+
   const toggleFullscreen = () => {
     const el = wrapRef.current
     if (!el) return
@@ -84,6 +100,7 @@ function GameScreen({
       classId,
       onState: setHud,
       onStageCleared,
+      onStory: pushStory,
       onRunEnd: (r) => {
         if (endedRef.current) return
         endedRef.current = true
@@ -111,7 +128,9 @@ function GameScreen({
         />
       )}
 
-      {hud?.status === 'paused' && (
+      {story && <Dialogue event={story} onDone={popStory} />}
+
+      {hud?.status === 'paused' && !story && (
         <div className="overlay">
           <div className="death-card">
             <h1>⏸ Paused</h1>
@@ -125,16 +144,27 @@ function GameScreen({
       {hud?.status === 'dead' && (
         <div className="overlay">
           <div className="death-card">
-            <h1>💀 Game Over</h1>
-            <p>You reached <b>Stage {hud.stage}</b> and beat <b>{hud.runKills}</b> monsters!</p>
-            <p className="essence-earned">Stages cleared: {Math.max(0, hud.stage - 1)}</p>
-            <p className="death-hint">Build a different five-skill loadout next run.</p>
-            <button className="play-btn" onClick={onExit}>🏠 Back to Menu</button>
+            <h1>💀 You Fell</h1>
+            <p className="cael-line">“{randomLine(DEATH_LINES)}”<br /><span className="cael-tag">— Cael</span></p>
+            <p>You reached <b>Stage {hud.stage}</b> and laid <b>{hud.runKills}</b> of the Hollow to rest.</p>
+            <p className="death-hint">The Ember calls you back. Descend again.</p>
+            <button className="play-btn" onClick={onExit}>🔥 Back to the Ember</button>
           </div>
         </div>
       )}
 
-      {hud && hud.status !== 'dead' && (
+      {hud?.status === 'victory' && (
+        <div className="overlay">
+          <div className="death-card victory-card">
+            <h1>👑 Aldermere Reclaimed</h1>
+            <p className="cael-line">“{VICTORY_LINES[0]}”<br />“{VICTORY_LINES[1]}”<br /><span className="cael-tag">— Cael</span></p>
+            <p>You cleared all <b>{hud.stage}</b> stages and took back the throne.</p>
+            <button className="play-btn" onClick={onExit}>🏰 Return to the Ember</button>
+          </div>
+        </div>
+      )}
+
+      {hud && hud.status !== 'dead' && hud.status !== 'victory' && !story && (
         <button className="pause-btn" onClick={() => engineRef.current?.togglePause()}>
           {hud.status === 'paused' ? '▶' : '⏸'}
         </button>

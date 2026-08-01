@@ -290,7 +290,7 @@ export const classSkillSynergies = (classId: ClassId): SkillSynergy[] =>
   SKILL_SYNERGIES.filter((synergy) => SKILLS[synergy.result].classId === classId)
 
 // ---------- Live snapshot for the React HUD ----------
-export type GameStatus = 'menu' | 'playing' | 'skillselect' | 'paused' | 'dead'
+export type GameStatus = 'menu' | 'playing' | 'skillselect' | 'paused' | 'dead' | 'victory'
 
 export interface AbilityView {
   id: SkillId
