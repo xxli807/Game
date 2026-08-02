@@ -3451,7 +3451,8 @@ export class GameEngine {
       const y = e.y - e.radius - 16
       ctx.fillStyle = 'rgba(0,0,0,0.5)'
       ctx.fillRect(x - 1, y - 1, w + 2, 6)
-      ctx.fillStyle = e.lord > 0 ? '#ff8787' : e.kind === 'boss' ? '#ff6b6b' : e.elite ? '#ffd43b' : '#69db7c'
+      // enemy health is red too; lords/elites just run brighter
+      ctx.fillStyle = e.lord > 0 || e.kind === 'boss' ? '#ff4d4d' : e.elite ? '#ff8787' : '#e03131'
       ctx.fillRect(x, y, w * (e.hp / e.maxHp), 4)
       if (e.lord > 0) {
         const layer = LAYERS[e.lord - 1]
@@ -3669,8 +3670,8 @@ export class GameEngine {
     // backing plate
     ctx.fillStyle = 'rgba(0,0,0,0.55)'
     ctx.fillRect(x - 1, y - 1, w + 2, barH * 2 + gap + 2)
-    // health
-    ctx.fillStyle = hpPct > 0.5 ? '#69db7c' : hpPct > 0.25 ? '#ffd43b' : '#ff6b6b'
+    // health — always red; it darkens as it drains so low health still reads
+    ctx.fillStyle = hpPct > 0.3 ? '#ff4d4d' : '#c92a2a'
     ctx.fillRect(x, y, w * hpPct, barH)
     // class resource (Rage / Mana / Essence)
     ctx.fillStyle = resColor
