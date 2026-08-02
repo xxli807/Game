@@ -116,6 +116,11 @@ interface Enemy {
   bleedT: number
   bleedDps: number
   bleedTick: number
+  // layer-lord state (0 = ordinary enemy, 1..4 = which fallen champion this is)
+  lord: number
+  castCd: number // time until the next signature attack
+  windup: number // >0 while the telegraph is showing, then the attack lands
+  phase2: boolean // the Hollow King's second phase
 }
 
 interface Skeleton {
@@ -351,6 +356,7 @@ export class GameEngine {
   private heroWalkUpRight: HTMLImageElement[] = []
   private heroWalkDownRight: HTMLImageElement[] = []
   private enemyImgs: Partial<Record<EnemyKind, HTMLImageElement>> = {}
+  private lordImgs: HTMLImageElement[] = []
   private cinderMawRun: HTMLImageElement[] = []
 
   // ---- designed world landmarks ----
@@ -428,6 +434,8 @@ export class GameEngine {
     }
     for (const k of Object.keys(enemyFile) as EnemyKind[]) this.enemyImgs[k] = load(enemyFile[k])
     this.cinderMawRun = Array.from({ length: 8 }, (_, n) => load(`enemy_cinder_maw_run_${n + 1}`))
+    // each layer-lord wears a different hollowed form
+    this.lordImgs = LAYERS.map((layer) => load(layer.lordForm))
   }
 
   private ready(img?: HTMLImageElement): img is HTMLImageElement {
@@ -812,7 +820,9 @@ export class GameEngine {
 
   // Enemy power grows with the finite stage number.
   private scale(): number {
-    return 1 + (this.stage - 1) * 0.12
+    // Tuned for the 12-stage descent: stage 12 lands near 4.7x so the
+    // Molten Heart bites after a run's worth of skill picks.
+    return 1 + (this.stage - 1) * 0.34
   }
 
   private spawnEnemy(force?: EnemyKind) {
@@ -866,7 +876,27 @@ export class GameEngine {
       bleedT: 0,
       bleedDps: 0,
       bleedTick: 0,
+      lord: 0,
+      castCd: 2.4,
+      windup: 0,
+      phase2: false,
     })
+    // On a lord stage the single boss IS the fallen champion of this layer:
+    // bigger, tougher, and armed with a signature attack.
+    if (kind === 'boss' && isLordStage(this.stage)) {
+      const e = this.enemies[this.enemies.length - 1]
+      const layer = layerForStage(this.stage)
+      e.lord = layer.index
+      const isKing = layer.index === LAYERS.length
+      // scale() already ramps hard across the descent, so the lord multiplier
+      // stays modest — a fight, not a damage sponge.
+      const hpMult = isKing ? 3.2 : 1.8
+      e.hp *= hpMult
+      e.maxHp = e.hp
+      e.radius *= isKing ? 1.3 : 1.15
+      e.damage *= isKing ? 1.35 : 1.15
+      e.speed *= 0.9
+    }
   }
 
   private enemySpec(kind: EnemyKind, s: number) {
@@ -1564,10 +1594,139 @@ export class GameEngine {
     e.bleedTick = Math.min(e.bleedTick, 0.25)
   }
 
+  /**
+   * Layer-lord behaviour: each fallen champion fights the way they used to.
+   * Every attack telegraphs first (a growing warning ring) so it can be dodged.
+   */
+  private updateLord(e: Enemy, dt: number, aimAtHero: number, dist: number) {
+    // The Hollow King gains a second phase at half health.
+    if (e.lord === LAYERS.length && !e.phase2 && e.hp < e.maxHp * 0.5) {
+      e.phase2 = true
+      e.castCd = 0.8
+      this.shake(16)
+      this.flash = 0.5
+      this.floatText(e.x, e.y - e.radius - 30, 'THE CROWN BURNS', '#ff6b3d', 26)
+      // the King calls the Hollow to him
+      for (let i = 0; i < 4; i++) this.spawnEnemy('fast')
+    }
+
+    if (e.windup > 0) {
+      e.windup -= dt
+      if (e.windup <= 0) this.lordStrike(e)
+      return // committed to the attack — stands still while winding up
+    }
+
+    e.castCd -= dt
+    if (e.castCd <= 0 && dist < 620) {
+      // begin the telegraph: a warning ring the player can read and escape
+      e.windup = e.lord === 1 ? 0.75 : 0.85
+      const base = e.lord === LAYERS.length ? (e.phase2 ? 2.6 : 3.4) : 3.8
+      e.castCd = base + Math.random() * 0.8
+      this.telegraphLord(e, aimAtHero)
+    }
+  }
+
+  /** Draw the wind-up warning for a lord's signature attack. */
+  private telegraphLord(e: Enemy, aim: number) {
+    const warn = 'rgba(255,90,70,0.75)'
+    switch (e.lord) {
+      case 1: // Roderin — shield slam around himself
+        this.rings.push({ x: e.x, y: e.y, r: 8, maxR: 190, life: 0.75, color: warn })
+        this.floatText(e.x, e.y - e.radius - 20, 'SHIELD SLAM', '#ffd43b', 18)
+        break
+      case 2: // Maren — root volley aimed at the hero
+        this.rings.push({ x: e.x, y: e.y, r: 8, maxR: 110, life: 0.85, color: 'rgba(140,220,120,0.8)' })
+        this.floatText(e.x, e.y - e.radius - 20, 'ROOT VOLLEY', '#8ce99a', 18)
+        e.facing = Math.cos(aim) < 0 ? -1 : 1
+        break
+      case 3: { // Yll — three freezing sigils on the ground near the hero
+        const h = this.hero
+        for (let i = 0; i < 3; i++) {
+          const ang = Math.random() * Math.PI * 2
+          const r = 40 + Math.random() * 110
+          this.meteors.push({
+            x: h.x + Math.cos(ang) * r, y: h.y + Math.sin(ang) * r,
+            t: 0.85, damage: e.damage * 0.9, radius: 78,
+          })
+        }
+        this.floatText(e.x, e.y - e.radius - 20, 'FROST SIGILS', '#8cd6ff', 18)
+        break
+      }
+      default: // the Hollow King — slam, and in phase 2 a rain of fire
+        this.rings.push({ x: e.x, y: e.y, r: 8, maxR: 230, life: 0.85, color: warn })
+        this.floatText(e.x, e.y - e.radius - 24, e.phase2 ? 'HEART OF FIRE' : 'CROWN SLAM', '#ff922b', 20)
+        if (e.phase2) {
+          const h = this.hero
+          for (let i = 0; i < 5; i++) {
+            const ang = Math.random() * Math.PI * 2
+            const r = Math.sqrt(Math.random()) * 190
+            this.meteors.push({
+              x: h.x + Math.cos(ang) * r, y: h.y + Math.sin(ang) * r,
+              t: 0.9 + Math.random() * 0.5, damage: e.damage * 0.8, radius: 84,
+            })
+          }
+        }
+        break
+    }
+  }
+
+  /** The moment a lord's telegraphed attack actually lands. */
+  private lordStrike(e: Enemy) {
+    const h = this.hero
+    const hit = (radius: number, mult: number) => {
+      if (Math.hypot(h.x - e.x, h.y - e.y) < radius) this.hurtHero(e.damage * mult)
+    }
+    switch (e.lord) {
+      case 1: // shockwave out from Roderin
+        this.rings.push({ x: e.x, y: e.y, r: 10, maxR: 190, life: 0.3, color: 'rgba(255,200,120,0.85)' })
+        hit(190, 1)
+        this.shake(12)
+        break
+      case 2: { // a fan of thorns toward the hero
+        const a = Math.atan2(h.y - e.y, h.x - e.x)
+        for (let i = 0; i < 5; i++) {
+          const spread = a + (i - 2) * 0.16
+          this.projectiles.push(this.mkProj(
+            e.x, e.y, Math.cos(spread) * 330, Math.sin(spread) * 330,
+            e.damage * 0.7, false, { r: 9, color: '#8ce99a' },
+          ))
+        }
+        break
+      }
+      case 3: // sigils already resolve as meteors; Yll blinks away to reposition
+        this.rings.push({ x: e.x, y: e.y, r: 8, maxR: 90, life: 0.3, color: 'rgba(180,150,255,0.8)' })
+        e.x += (Math.random() - 0.5) * 260
+        e.y += (Math.random() - 0.5) * 260
+        e.x = Math.max(30, Math.min(WORLD_W - 30, e.x))
+        e.y = Math.max(30, Math.min(WORLD_H - 30, e.y))
+        break
+      default: // the King's crown slam
+        this.rings.push({ x: e.x, y: e.y, r: 10, maxR: 230, life: 0.35, color: 'rgba(255,150,80,0.9)' })
+        hit(230, 1.1)
+        this.shake(16)
+        break
+    }
+  }
+
   private killEnemy(e: Enemy) {
     e.hp = 0
     this.kills++
     this.stageKills++
+    // A fallen champion always yields their layer's relic.
+    if (e.lord > 0) {
+      const layer = LAYERS[e.lord - 1]
+      if (layer && !this.relics.has(layer.relic.key)) {
+        this.relics.add(layer.relic.key)
+        this.recomputeStats()
+        this.floatText(e.x, e.y - 40, `${layer.relic.icon} ${layer.relic.name}`, '#ffd43b', 24)
+        this.opts.onStory({
+          id: `relic-${layer.relic.key}`,
+          title: layer.relic.name,
+          subtitle: 'RELIC OF ALDERMERE',
+          lines: [layer.relicTaken, layer.relic.desc],
+        })
+      }
+    }
     if (this.classId === 'warrior') {
       const baseRage = e.kind === 'boss' ? 35 : e.elite ? 20 : 8
       const furyLevel = this.owned('power')?.level ?? 0
@@ -1795,19 +1954,7 @@ export class GameEngine {
       }
     }
 
-    // Layer relic: a story-themed boon unique to the current descent layer,
-    // offered (strongly) while you're in that layer and haven't taken it yet.
-    const relic = layerForStage(this.stage).relic
-    if (!this.relics.has(relic.key)) {
-      opts.push({
-        weight: 7,
-        choice: {
-          id: `relic-${relic.key}`, name: relic.name, icon: relic.icon,
-          desc: relic.desc, rarity: 'epic', tag: `✦ ${this.layerName}`,
-        },
-        apply: () => { this.relics.add(relic.key); this.recomputeStats() },
-      })
-    }
+    // (Layer relics are no longer drafted — they're taken from the fallen lord.)
 
     // Fallback: if every slot is full & maxed, offer a small heal-up so the draft is never empty.
     if (opts.length === 0) {
@@ -2322,7 +2469,9 @@ export class GameEngine {
       } else {
         e.x += Math.cos(a) * spd * dt
         e.y += Math.sin(a) * spd * dt
-        if (e.kind === 'boss') {
+        if (e.lord > 0) {
+          this.updateLord(e, dt, a, dist)
+        } else if (e.kind === 'boss') {
           e.shoot -= dt
           if (e.shoot <= 0) {
             e.shoot = 3
@@ -3250,6 +3399,11 @@ export class GameEngine {
     if (e.kind === 'fast' && this.cinderMawRun.every((frame) => this.ready(frame))) {
       img = this.cinderMawRun[Math.floor(e.phase * 1.75) % this.cinderMawRun.length]
     }
+    // a layer-lord wears the hollowed form of the champion they were
+    if (e.lord > 0) {
+      const lordImg = this.lordImgs[e.lord - 1]
+      if (this.ready(lordImg)) img = lordImg
+    }
     // elite aura
     if (e.elite) {
       ctx.save()
@@ -3290,15 +3444,26 @@ export class GameEngine {
       ctx.lineTo(e.x, cy - 9); ctx.lineTo(e.x + 4, cy - 3); ctx.lineTo(e.x + 9, cy - 7); ctx.lineTo(e.x + 9, cy)
       ctx.closePath(); ctx.fill()
     }
-    // health bar
-    if (e.hp < e.maxHp) {
+    // health bar (lords always show theirs, with a name plate)
+    if (e.hp < e.maxHp || e.lord > 0) {
       const w = e.radius * 2
       const x = e.x - w / 2
       const y = e.y - e.radius - 16
       ctx.fillStyle = 'rgba(0,0,0,0.5)'
       ctx.fillRect(x - 1, y - 1, w + 2, 6)
-      ctx.fillStyle = e.kind === 'boss' ? '#ff6b6b' : e.elite ? '#ffd43b' : '#69db7c'
+      ctx.fillStyle = e.lord > 0 ? '#ff8787' : e.kind === 'boss' ? '#ff6b6b' : e.elite ? '#ffd43b' : '#69db7c'
       ctx.fillRect(x, y, w * (e.hp / e.maxHp), 4)
+      if (e.lord > 0) {
+        const layer = LAYERS[e.lord - 1]
+        ctx.save()
+        ctx.font = 'bold 13px system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillStyle = 'rgba(0,0,0,0.65)'
+        ctx.fillText(layer.lordShort, e.x + 1, y - 7)
+        ctx.fillStyle = e.phase2 ? '#ff922b' : '#ffd9b0'
+        ctx.fillText(layer.lordShort, e.x, y - 8)
+        ctx.restore()
+      }
     }
   }
 

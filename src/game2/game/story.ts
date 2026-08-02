@@ -1,4 +1,4 @@
-// ---------- The story of Aldermere, told by Cael (the sword) ----------
+// ---------- The story of Aldermere, told by Cael (bound to your weapon) ----------
 // Snarky & heartfelt narration for the descent. Delivered as short beats so a
 // commuter gets a satisfying bite each run. See Plan/plan.md for the bible.
 import { Biome } from './sprites'
@@ -24,7 +24,10 @@ export interface Layer {
   name: string
   biome: Biome
   lord: string // the layer-lord (boss) — a fallen champion you both knew
+  lordShort: string // name plate shown over the boss
+  lordForm: string // the shape the Hollowing twisted them into (sprite key)
   teaser: string // what Cael will say of it before you've been there
+  relicTaken: string // Cael, as you take the relic from their remains
   relic: LayerRelic // a story-themed boon found only in this layer
   enter: string[] // Cael, on entering the layer
   lordIntro: string[] // Cael, when the layer-lord appears (boss stage)
@@ -34,6 +37,8 @@ export const LAYERS: Layer[] = [
   {
     index: 1, numeral: 'I', name: 'The Sunken Keep', teaser: 'Drowned halls, and something that still keeps watch', biome: 'dungeon',
     lord: 'Sir Roderin, the First to Fall',
+    lordShort: 'Sir Roderin', lordForm: 'enemy_brute',
+    relicTaken: "He'd want you to have it. Take it — he held that gate long enough.",
     relic: { key: 'keepstone', name: 'Keepstone Ward', icon: '🏰', desc: '+80 max health and steady regeneration — the old keep still shelters its own.' },
     enter: [
       'The Sunken Keep. Home — or it was, before the Hollowing took it.',
@@ -47,6 +52,8 @@ export const LAYERS: Layer[] = [
   {
     index: 2, numeral: 'II', name: 'The Rotwood', teaser: 'A greenwood gone wrong, below the Keep', biome: 'forest',
     lord: 'Maren the Green',
+    lordShort: 'Maren the Green', lordForm: 'enemy_ironroot_colossus',
+    relicTaken: 'She grew that from the old greenwood. It\u2019s yours now.',
     relic: { key: 'thornheart', name: 'Thornheart', icon: '🌿', desc: 'Your strikes drink life and the thorns bite back — lifesteal and retaliation.' },
     enter: [
       "The queen's gardens. We trained here, under the greenwood.",
@@ -60,6 +67,8 @@ export const LAYERS: Layer[] = [
   {
     index: 3, numeral: 'III', name: 'The Frozen Vaults', teaser: 'Where the kingdom locked away what it feared', biome: 'snow',
     lord: 'Archivist Yll',
+    lordShort: 'Archivist Yll', lordForm: 'enemy_mire_oracle',
+    relicTaken: 'She catalogued every relic in Aldermere. She\u2019d approve of this one.',
     relic: { key: 'rimebound', name: 'Rimebound Edge', icon: '🧊', desc: 'Cold, patient, exact — a sharp rise in critical chance and critical damage.' },
     enter: [
       'The Vaults. Every book the kingdom ever wrote, frozen solid.',
@@ -73,7 +82,9 @@ export const LAYERS: Layer[] = [
   {
     index: 4, numeral: 'IV', name: 'The Molten Heart', teaser: 'The wound at the bottom of the world', biome: 'volcano',
     lord: 'the Hollow King',
-    relic: { key: 'emberwrath', name: 'Emberwrath', icon: '🔥', desc: "The Heart's fury in your arm — a heavy surge of sword damage." },
+    lordShort: 'The Hollow King', lordForm: 'boss_dragon',
+    relicTaken: 'Take it. The Heart owes us that much.',
+    relic: { key: 'emberwrath', name: 'Emberwrath', icon: '🔥', desc: "The Heart's fury in your arm — a heavy surge of weapon damage." },
     enter: [
       'The Molten Heart. Where the Hollowing was born.',
       "The throne's just ahead. Whatever sits on it now... it isn't the king anymore.",
@@ -129,6 +140,14 @@ export function randomLine(lines: string[]): string {
   return lines[Math.floor(Math.random() * lines.length)]
 }
 
+/**
+ * Cael is bound to whatever Oathbound relic you carry, not specifically a sword —
+ * so the narration fits the Mage and Necromancer too.
+ */
+export function weaponNoun(classId: 'warrior' | 'mage' | 'necromancer'): string {
+  return classId === 'mage' ? 'focus' : classId === 'necromancer' ? 'reliquary' : 'blade'
+}
+
 /** Cael when a layer-lord falls — the emotional payoff of each layer. */
 export const LORD_DOWN: string[][] = [
   ['Rest easy, Roderin. You held the gate longer than any of us.'],
@@ -149,7 +168,7 @@ export const BARKS = {
     'Take it. The kingdom owes you that much.',
   ],
   evolve: [
-    'Now THAT’S old Aldermere steel. Just like the drills.',
+    'Now THAT’S old Aldermere craft. Just like the drills.',
     "Feels good, doesn't it? Don't let it go to your head.",
   ],
   swarm: [
@@ -165,7 +184,7 @@ export function chapterRecap(deepestLayer: number, victories: number): string {
   }
   switch (deepestLayer) {
     case 0:
-      return 'The kingdom of Aldermere is hollowed out and silent. One knight still stands at the last ember, with a sword that will not let them rest.'
+      return 'The kingdom of Aldermere is hollowed out and silent. One knight still stands at the last ember, carrying a friend who will not let them rest.'
     case 1:
       return 'You have walked the drowned halls of the Sunken Keep and laid Sir Roderin to rest. Below, the rotted greenwood waits.'
     case 2:

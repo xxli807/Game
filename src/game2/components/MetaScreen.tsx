@@ -1,5 +1,5 @@
 import { ClassId, CLASSES, MetaState } from '../game/types'
-import { LAYERS, STAGES_PER_LAYER, FINAL_STAGE, chapterRecap } from '../game/story'
+import { LAYERS, STAGES_PER_LAYER, FINAL_STAGE, chapterRecap, weaponNoun } from '../game/story'
 
 interface Props {
   meta: MetaState
@@ -22,8 +22,8 @@ export default function MetaScreen({ meta, classId, onClassChange, onStart }: Pr
         <div className="ember-mark">🔥</div>
         <h1 className="title ember-title">The Last Ember</h1>
         <p className="tagline ember-tagline">
-          Aldermere is hollow. You are the last of the Oathbound — and the sword you carry
-          still has your oldest friend inside it.
+          Aldermere is hollow. You are the last of the Oathbound — and the {weaponNoun(classId)} you
+          carry still has your oldest friend inside it.
         </p>
 
         <div className="ember-story">
