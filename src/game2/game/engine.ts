@@ -359,18 +359,6 @@ export class GameEngine {
   private lordImgs: HTMLImageElement[] = []
   private cinderMawRun: HTMLImageElement[] = []
 
-  // ---- designed world landmarks ----
-  private readonly plaza = { x: WORLD_W / 2, y: WORLD_H / 2, r: 210 }
-  private readonly river = { y: WORLD_H / 2, half: 78 } // east-west, splits top/bottom
-  private readonly road = { x: WORLD_W / 2, half: 50 } // north-south, splits left/right
-  private readonly lakes: { x: number; y: number; rx: number; ry: number; type: 'ice' | 'lava' | 'pond' }[] = [
-    { x: WORLD_W * 0.26, y: WORLD_H * 0.76, rx: 300, ry: 175, type: 'ice' },
-    { x: WORLD_W * 0.74, y: WORLD_H * 0.72, rx: 285, ry: 160, type: 'lava' },
-    { x: WORLD_W * 0.80, y: WORLD_H * 0.24, rx: 190, ry: 120, type: 'pond' },
-  ]
-  private readonly bridges = [WORLD_W * 0.26, WORLD_W * 0.74]
-  private lavaTick = 0
-
   // in-run sword tier thresholds (cumulative kills)
   private readonly TIER_KILLS = [10, 26, 48, 78, 120]
 
@@ -545,6 +533,7 @@ export class GameEngine {
     this.layerName = layer.name
     if (layer.index - 1 !== this.layerIndex) {
       this.layerIndex = layer.index - 1
+      this.generateDecor() // re-dress the arena with this layer's own props
       this.opts.onStory({ id: `layer-${layer.index}`, numeral: layer.numeral, title: layer.name, lines: layer.enter })
     }
     if (isLordStage(stage)) {
@@ -562,17 +551,9 @@ export class GameEngine {
     }
   }
 
-  /** Keep props off water, roads and the plaza so the map reads as designed. */
+  /** Keep a clear ring around the spawn point so the opening reads cleanly. */
   private onClearGround(x: number, y: number): boolean {
-    if (Math.hypot(x - this.plaza.x, y - this.plaza.y) < this.plaza.r + 20) return false
-    if (Math.abs(y - this.river.y) < this.river.half + 10) return false
-    if (Math.abs(x - this.road.x) < this.road.half + 10) return false
-    for (const l of this.lakes) {
-      const dx = (x - l.x) / (l.rx + 16)
-      const dy = (y - l.y) / (l.ry + 16)
-      if (dx * dx + dy * dy < 1) return false
-    }
-    return true
+    return Math.hypot(x - WORLD_W / 2, y - WORLD_H / 2) > 150
   }
 
   private addDecor(x: number, y: number, type: string, s: number) {
@@ -581,50 +562,26 @@ export class GameEngine {
     this.decor.push({ x, y, biome: regionAt(x, y), type, s })
   }
 
-  private cluster(cx: number, cy: number, spread: number, n: number, types: string[]) {
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2
-      const r = Math.sqrt(Math.random()) * spread
-      const t = types[Math.floor(Math.random() * types.length)]
-      this.addDecor(cx + Math.cos(a) * r, cy + Math.sin(a) * r, t, 0.8 + Math.random() * 0.7)
-    }
-  }
-
+  /**
+   * Scatter props belonging to the CURRENT layer only, evenly across the arena.
+   * Survivor maps stay uniform and readable — the ground is a backdrop, not a
+   * puzzle — so this is a light, even sprinkle with no landmarks to navigate.
+   */
   private generateDecor() {
     this.decor = []
     const perType: Record<Biome, string[]> = {
-      dungeon: ['pillar', 'rubble'],
-      forest: ['tree', 'tree', 'bush'],
-      snow: ['pine', 'icerock'],
-      volcano: ['rock', 'rock'],
+      dungeon: ['pillar', 'rubble', 'statue'],
+      forest: ['tree', 'tree', 'bush', 'deadtree'],
+      snow: ['pine', 'icerock', 'icespire'],
+      volcano: ['rock', 'rock', 'vent'],
     }
-    // sparse background scatter (kept light so the map doesn't feel cluttered)
-    for (let i = 0; i < 85; i++) {
-      const x = 30 + Math.random() * (WORLD_W - 60)
-      const y = 30 + Math.random() * (WORLD_H - 60)
-      const opts = perType[regionAt(x, y)]
+    const opts = perType[this.biome]
+    for (let i = 0; i < 70; i++) {
+      const x = 40 + Math.random() * (WORLD_W - 80)
+      const y = 40 + Math.random() * (WORLD_H - 80)
+      if (!this.onClearGround(x, y)) continue
       this.addDecor(x, y, opts[Math.floor(Math.random() * opts.length)], 0.7 + Math.random() * 0.6)
     }
-    // forest grove — a dense cluster of trees, plus a landmark dead tree
-    this.cluster(WORLD_W * 0.58, WORLD_H * 0.32, 240, 46, ['tree', 'tree', 'bush'])
-    this.addDecor(WORLD_W * 0.58, WORLD_H * 0.32, 'deadtree', 2.0)
-    // reeds around the forest pond
-    this.cluster(WORLD_W * 0.80, WORLD_H * 0.24, 220, 24, ['bush'])
-    // frozen lake shore — pines and ice, plus an ice spire
-    this.cluster(WORLD_W * 0.26, WORLD_H * 0.76, 360, 40, ['pine', 'icerock'])
-    this.addDecor(WORLD_W * 0.40, WORLD_H * 0.62, 'icespire', 2.2)
-    // volcano field — rocks around the lava lake, with a smoking vent
-    this.cluster(WORLD_W * 0.74, WORLD_H * 0.72, 360, 34, ['rock', 'rock'])
-    this.addDecor(WORLD_W * 0.62, WORLD_H * 0.86, 'vent', 2.0)
-    // dungeon ruins — pillars in a broken colonnade + a statue
-    for (let i = 0; i < 6; i++) {
-      this.addDecor(WORLD_W * 0.14 + i * 46, WORLD_H * 0.18, 'pillar', 1.2)
-      this.addDecor(WORLD_W * 0.14 + i * 46, WORLD_H * 0.34, 'pillar', 1.2)
-    }
-    this.cluster(WORLD_W * 0.22, WORLD_H * 0.26, 200, 8, ['rubble'])
-    this.addDecor(WORLD_W * 0.30, WORLD_H * 0.14, 'statue', 2.0)
-    // the central plaza obelisk
-    this.addDecor(this.plaza.x, this.plaza.y, 'obelisk', 2.6)
   }
 
   private centerCamera() {
@@ -2108,21 +2065,6 @@ export class GameEngine {
 
     // biome is fixed by the current descent layer (set in enterStage), not by roaming
 
-    // standing in the lava lake burns you (a hazard that makes the map matter)
-    this.lavaTick = Math.max(0, this.lavaTick - dt)
-    for (const l of this.lakes) {
-      if (l.type !== 'lava') continue
-      const dx = (h.x - l.x) / l.rx
-      const dy = (h.y - l.y) / l.ry
-      if (dx * dx + dy * dy < 1 && h.shieldT <= 0) {
-        if (this.lavaTick <= 0) {
-          this.lavaTick = 0.5
-          h.hp -= 14
-          this.floatText(h.x, h.y - 24, '🔥', '#ff922b', 20)
-          this.particles.push({ x: h.x, y: h.y, vx: 0, vy: -40, life: 0.4, maxLife: 0.4, text: '🔥', size: 16, color: '#ff922b' })
-        }
-      }
-    }
 
     // Warriors cleave in melee; Mages automatically fire a ranged wand bolt.
     const attackTarget = this.nearestEnemy(this.classId === 'warrior' ? s.swordRange + 50 : 520)
@@ -2944,42 +2886,36 @@ export class GameEngine {
     const sx = w / WORLD_W
     const sy = h / WORLD_H
     ctx.save()
-    ctx.globalAlpha = 0.85
-    // region quadrants
-    for (let r = 0; r < 4; r++) {
-      const pal = BIOMES[BIOME_ORDER[r]]
-      const qx = x + (r % 2) * (w / 2)
-      const qy = y + Math.floor(r / 2) * (h / 2)
-      ctx.fillStyle = pal.floorA
-      ctx.fillRect(qx, qy, w / 2, h / 2)
-    }
-    // river + road
-    ctx.strokeStyle = '#3d92c9'; ctx.lineWidth = 3
-    ctx.beginPath(); ctx.moveTo(x, y + this.river.y * sy); ctx.lineTo(x + w, y + this.river.y * sy); ctx.stroke()
-    ctx.strokeStyle = '#8a7f66'; ctx.lineWidth = 2
-    ctx.beginPath(); ctx.moveTo(x + this.road.x * sx, y); ctx.lineTo(x + this.road.x * sx, y + h); ctx.stroke()
-    // lakes + plaza landmarks
-    for (const l of this.lakes) {
-      ctx.fillStyle = l.type === 'lava' ? '#ff6b2b' : l.type === 'ice' ? '#bfe3f5' : '#2f6d6a'
-      ctx.beginPath(); ctx.ellipse(x + l.x * sx, y + l.y * sy, l.rx * sx, l.ry * sy, 0, 0, Math.PI * 2); ctx.fill()
-    }
-    ctx.fillStyle = '#cfd3e0'
-    ctx.beginPath(); ctx.arc(x + this.plaza.x * sx, y + this.plaza.y * sy, 3, 0, Math.PI * 2); ctx.fill()
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+    // A plain radar: the arena tinted by the current layer, you, the enemies,
+    // and anything worth running toward. Nothing else to decode.
+    const pal = BIOMES[this.biome]
+    ctx.globalAlpha = 0.72
+    ctx.fillStyle = pal.floorA
+    ctx.fillRect(x, y, w, h)
+    ctx.globalAlpha = 0.95
+    // camera viewport, so you can see how much of the arena you're looking at
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)'
     ctx.lineWidth = 1
-    ctx.strokeRect(x, y, w, h)
+    ctx.strokeRect(x + this.cam.x * sx, y + this.cam.y * sy, WIDTH * sx, HEIGHT * sy)
     // enemies
-    ctx.fillStyle = '#ff6b6b'
-    for (const e of this.enemies) ctx.fillRect(x + e.x * sx - 1, y + e.y * sy - 1, e.elite ? 3 : 2, e.elite ? 3 : 2)
-    // hero
-    ctx.fillStyle = '#ffe066'
-    ctx.beginPath(); ctx.arc(x + this.hero.x * sx, y + this.hero.y * sy, 3, 0, Math.PI * 2); ctx.fill()
-    // chests & hearts blip on the minimap so you run for them
+    ctx.fillStyle = '#ff4d4d'
+    for (const e of this.enemies) {
+      const size = e.lord > 0 ? 4 : e.elite ? 3 : 2
+      ctx.fillRect(x + e.x * sx - size / 2, y + e.y * sy - size / 2, size, size)
+    }
+    // pickups worth chasing
     for (const pk of this.pickups) {
       if (pk.type !== 'chest' && pk.type !== 'heart') continue
-      ctx.fillStyle = pk.type === 'chest' ? '#ffd43b' : '#ff6b6b'
+      ctx.fillStyle = pk.type === 'chest' ? '#ffd43b' : '#ff8787'
       ctx.beginPath(); ctx.arc(x + pk.x * sx, y + pk.y * sy, 2.5, 0, Math.PI * 2); ctx.fill()
     }
+    // hero last, so they're always on top
+    ctx.fillStyle = '#ffe066'
+    ctx.beginPath(); ctx.arc(x + this.hero.x * sx, y + this.hero.y * sy, 3, 0, Math.PI * 2); ctx.fill()
+    // frame
+    ctx.strokeStyle = 'rgba(255,220,160,0.5)'
+    ctx.lineWidth = 1
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
     ctx.restore()
   }
 
@@ -3085,132 +3021,13 @@ export class GameEngine {
       }
     }
 
-    // ---- designed landmarks (drawn over the ground) ----
-    this.drawLakes()
-    this.drawRiver()
-    this.drawRoad()
-    this.drawPlaza()
-    this.drawBridges()
+    // Deliberately uniform ground: like other survivor games the arena stays
+    // clean and readable so enemies, drops and telegraphs pop against it.
 
     // world border wall
     ctx.strokeStyle = 'rgba(0,0,0,0.6)'
     ctx.lineWidth = 20
     ctx.strokeRect(0, 0, WORLD_W, WORLD_H)
-  }
-
-  private drawLakes() {
-    const ctx = this.ctx
-    const t = this.floorPhase
-    for (const l of this.lakes) {
-      if (!this.inView(l.x, l.y, Math.max(l.rx, l.ry) + 40)) continue
-      if (l.type === 'ice') {
-        ctx.fillStyle = '#bfe3f5'
-        ctx.beginPath(); ctx.ellipse(l.x, l.y, l.rx, l.ry, 0, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = 'rgba(255,255,255,0.35)'
-        ctx.beginPath(); ctx.ellipse(l.x - l.rx * 0.2, l.y - l.ry * 0.2, l.rx * 0.55, l.ry * 0.4, -0.3, 0, Math.PI * 2); ctx.fill()
-        // cracks
-        ctx.strokeStyle = 'rgba(150,200,230,0.7)'; ctx.lineWidth = 2
-        ctx.beginPath(); ctx.moveTo(l.x - l.rx * 0.5, l.y); ctx.lineTo(l.x, l.y - l.ry * 0.3); ctx.lineTo(l.x + l.rx * 0.5, l.y + l.ry * 0.2); ctx.stroke()
-        ctx.strokeStyle = 'rgba(200,235,255,0.9)'; ctx.lineWidth = 3
-        ctx.beginPath(); ctx.ellipse(l.x, l.y, l.rx, l.ry, 0, 0, Math.PI * 2); ctx.stroke()
-      } else if (l.type === 'lava') {
-        const pulse = 0.5 + 0.3 * Math.sin(t * 2)
-        ctx.fillStyle = '#2a0f0a'
-        ctx.beginPath(); ctx.ellipse(l.x, l.y, l.rx + 8, l.ry + 8, 0, 0, Math.PI * 2); ctx.fill()
-        const g = ctx.createRadialGradient(l.x, l.y, 10, l.x, l.y, l.rx)
-        g.addColorStop(0, '#ffe066'); g.addColorStop(0.4, '#ff6b2b'); g.addColorStop(1, '#7d2a12')
-        ctx.fillStyle = g
-        ctx.beginPath(); ctx.ellipse(l.x, l.y, l.rx, l.ry, 0, 0, Math.PI * 2); ctx.fill()
-        // dark crust islands
-        ctx.fillStyle = 'rgba(40,15,10,0.85)'
-        ctx.beginPath(); ctx.ellipse(l.x - l.rx * 0.3, l.y + l.ry * 0.2, 30, 18, 0.4, 0, Math.PI * 2); ctx.fill()
-        ctx.beginPath(); ctx.ellipse(l.x + l.rx * 0.35, l.y - l.ry * 0.25, 24, 14, -0.3, 0, Math.PI * 2); ctx.fill()
-        ctx.save(); ctx.globalCompositeOperation = 'lighter'
-        ctx.fillStyle = `rgba(255,180,60,${0.25 * pulse})`
-        ctx.beginPath(); ctx.ellipse(l.x, l.y, l.rx * 0.9, l.ry * 0.9, 0, 0, Math.PI * 2); ctx.fill()
-        ctx.restore()
-      } else {
-        // forest pond
-        ctx.fillStyle = '#2f6d6a'
-        ctx.beginPath(); ctx.ellipse(l.x, l.y, l.rx, l.ry, 0, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = 'rgba(140,220,220,0.35)'
-        ctx.beginPath(); ctx.ellipse(l.x - l.rx * 0.25, l.y - l.ry * 0.25, l.rx * 0.5, l.ry * 0.35, -0.3, 0, Math.PI * 2); ctx.fill()
-        ctx.strokeStyle = '#3f9a6a'; ctx.lineWidth = 4
-        ctx.beginPath(); ctx.ellipse(l.x, l.y, l.rx, l.ry, 0, 0, Math.PI * 2); ctx.stroke()
-      }
-    }
-  }
-
-  private drawRiver() {
-    const ctx = this.ctx
-    const { y, half } = this.river
-    if (this.cam.y > y + half + 20 || this.cam.y + HEIGHT < y - half - 20) return
-    const vx0 = this.cam.x, vx1 = this.cam.x + WIDTH
-    const g = ctx.createLinearGradient(0, y - half, 0, y + half)
-    g.addColorStop(0, '#2a6fa0'); g.addColorStop(0.5, '#3d92c9'); g.addColorStop(1, '#2a6fa0')
-    ctx.fillStyle = g
-    ctx.fillRect(vx0, y - half, WIDTH, half * 2)
-    // banks
-    ctx.fillStyle = 'rgba(120,90,60,0.5)'
-    ctx.fillRect(vx0, y - half - 6, WIDTH, 6); ctx.fillRect(vx0, y + half, WIDTH, 6)
-    // animated ripples
-    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 2
-    for (let i = 0; i < 3; i++) {
-      const ry = y - half + 20 + i * 24
-      ctx.beginPath()
-      for (let x = vx0; x <= vx1; x += 16) ctx.lineTo(x, ry + Math.sin(x * 0.03 + this.floorPhase * 2 + i) * 4)
-      ctx.stroke()
-    }
-  }
-
-  private drawRoad() {
-    const ctx = this.ctx
-    const { x, half } = this.road
-    if (this.cam.x > x + half + 20 || this.cam.x + WIDTH < x - half - 20) return
-    const vy0 = this.cam.y
-    ctx.fillStyle = '#6a6152'
-    ctx.fillRect(x - half, vy0, half * 2, HEIGHT)
-    // paving stones
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2
-    const s = 34
-    for (let py = Math.floor(vy0 / s) * s; py < vy0 + HEIGHT; py += s) {
-      ctx.strokeRect(x - half + 4, py, half - 6, s - 4)
-      ctx.strokeRect(x + 2, py + s / 2, half - 6, s - 4)
-    }
-  }
-
-  private drawPlaza() {
-    const ctx = this.ctx
-    const { x, y, r } = this.plaza
-    if (!this.inView(x, y, r + 40)) return
-    ctx.fillStyle = '#7c8496'
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
-    ctx.fillStyle = '#8b94a8'
-    ctx.beginPath(); ctx.arc(x, y, r - 16, 0, Math.PI * 2); ctx.fill()
-    // concentric rings
-    ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 3
-    for (const rr2 of [r - 40, r - 90, r - 140]) { ctx.beginPath(); ctx.arc(x, y, rr2, 0, Math.PI * 2); ctx.stroke() }
-    // radial seams
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 2
-    for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); ctx.stroke()
-    }
-  }
-
-  private drawBridges() {
-    const ctx = this.ctx
-    const { y, half } = this.river
-    for (const bx of this.bridges) {
-      if (!this.inView(bx, y, 90)) continue
-      ctx.fillStyle = '#7a5a34'
-      ctx.fillRect(bx - 34, y - half - 8, 68, half * 2 + 16)
-      ctx.fillStyle = '#8a6a40'
-      for (let py = y - half - 4; py < y + half + 8; py += 12) ctx.fillRect(bx - 32, py, 64, 7)
-      // rails
-      ctx.fillStyle = '#5a3f22'
-      ctx.fillRect(bx - 36, y - half - 8, 4, half * 2 + 16)
-      ctx.fillRect(bx + 32, y - half - 8, 4, half * 2 + 16)
-    }
   }
 
   // Per-tile flourishes that make each biome feel alive.
