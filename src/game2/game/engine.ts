@@ -609,11 +609,18 @@ export class GameEngine {
     return Math.min(this.MAX_STAGE_ENEMIES, 8 + stage * 2)
   }
 
+  /** How many of the Hollow should be on the field at once (the pressure dial). */
+  private aliveTarget(): number {
+    return Math.min(this.MAX_STAGE_ENEMIES, 14 + this.stage * 4)
+  }
+
   private startStage(stage: number) {
     this.stage = stage
     this.stageSpawned = 0
     this.stageKills = 0
     this.spawnTimer = 0
+    // a layer-lord is fought alone: clear the horde so the duel reads cleanly
+    if (isLordStage(stage)) this.enemies = []
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
     this.hero.rage = this.classId === 'mage' ? this.stats.maxRage : 0
     this.status = 'playing'
@@ -632,7 +639,8 @@ export class GameEngine {
     // Reaching the Molten Heart's throne (final boss) is the win, not another draft.
     if (this.stage >= FINAL_STAGE) { this.win(); return }
     this.status = 'skillselect'
-    this.enemies = []
+    // Survivors carry over so the next stage opens mid-fight instead of empty —
+    // the horde is continuous; the stage counter is just how you measure it.
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
     this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + this.stats.maxHp * 0.12)
     this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${this.stage} CLEARED!`, '#69db7c', 30)
@@ -2128,19 +2136,27 @@ export class GameEngine {
     // auto-weapons fire on their own
     this.updateWeapons(dt)
 
-    // Each stage owns a finite spawn budget. Clearing that budget opens the skill draft.
+    // A stage is a KILL QUOTA, not a spawn budget: the Hollow keeps streaming in
+    // until the quota is met, so there's never a lull spent hunting stragglers.
     this.survTime += dt
     const stageTotal = this.stageEnemyTotal()
     this.spawnTimer -= dt
-    if (this.spawnTimer <= 0 && this.stageSpawned < stageTotal) {
+    if (this.spawnTimer <= 0 && this.stageKills < stageTotal) {
       if (isLordStage(this.stage)) {
-        this.spawnStageBoss()
-        this.stageSpawned = 1
+        // the layer-lord is a duel — spawn them once, alone
+        if (this.stageSpawned === 0) {
+          this.spawnStageBoss()
+          this.stageSpawned = 1
+        }
       } else {
-        const remaining = stageTotal - this.stageSpawned
-        const burst = Math.min(remaining, 1 + Math.floor(this.stage / 4))
-        for (let i = 0; i < burst; i++) this.spawnEnemy()
-        this.stageSpawned += burst
+        // keep the field populated rather than emptying it
+        const alive = this.enemies.reduce((n, e) => n + (e.hp > 0 ? 1 : 0), 0)
+        const deficit = this.aliveTarget() - alive
+        if (deficit > 0) {
+          const burst = Math.min(deficit, 1 + Math.floor(this.stage / 3))
+          for (let i = 0; i < burst; i++) this.spawnEnemy()
+          this.stageSpawned += burst
+        }
       }
       this.spawnTimer = 0.22
     }
@@ -2182,11 +2198,8 @@ export class GameEngine {
 
     if (h.hp <= 0) {
       this.endRun()
-    } else if (
-      this.status === 'playing'
-      && this.stageSpawned >= stageTotal
-      && this.enemies.every((enemy) => enemy.hp <= 0)
-    ) {
+    } else if (this.status === 'playing' && this.stageKills >= stageTotal) {
+      // quota met — advance even if stragglers are still closing in
       this.completeStage()
     }
 
