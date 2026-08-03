@@ -6,6 +6,7 @@ import HUD from './components/HUD'
 import LevelUpModal from './components/LevelUpModal'
 import MetaScreen from './components/MetaScreen'
 import Dialogue from './components/Dialogue'
+import { audio } from './game/audio'
 import {
   StoryEvent, DEATH_LINES, VICTORY_LINES, randomLine,
   depthForStage, isLordStage, layerForStage, FINAL_STAGE,
@@ -60,7 +61,7 @@ export default function App() {
   if (!inRun) {
     return (
       <div className="app">
-        <MetaScreen meta={meta} classId={classId} onClassChange={setClassId} onStart={() => setInRun(true)} />
+        <MetaScreen meta={meta} classId={classId} onClassChange={setClassId} onStart={() => { audio.resume(); audio.play('ui'); setInRun(true) }} />
       </div>
     )
   }
@@ -96,6 +97,7 @@ function GameScreen({
   const wrapRef = useRef<HTMLDivElement>(null)
   const endedRef = useRef(false)
   const [hud, setHud] = useState<HudState | null>(null)
+  const [muted, setMuted] = useState(() => audio.isMuted())
 
   // Cael's story dialogue: queued events, shown one at a time; the world pauses while one is up.
   const [story, setStory] = useState<StoryEvent | null>(null)
@@ -200,6 +202,7 @@ function GameScreen({
           {hud.status === 'paused' ? '▶' : '⏸'}
         </button>
       )}
+      <button className="mute-btn" onClick={() => { audio.resume(); setMuted(audio.toggleMute()) }} title={muted ? 'Unmute' : 'Mute'}>{muted ? '🔇' : '🔊'}</button>
       <button className="fs-btn" onClick={toggleFullscreen} title="Fullscreen">⛶</button>
       <button className="exit-btn" onClick={onExit}>✕</button>
     </div>

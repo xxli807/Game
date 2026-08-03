@@ -23,6 +23,7 @@ import {
   SWORD_STYLES,
   randomSwordStyle,
 } from './sprites'
+import { audio } from './audio'
 import {
   StoryEvent, LAYERS, layerForStage, isLordStage, depthForStage,
   OPENING, FINAL_STAGE, LORD_DOWN, BARKS, randomLine,
@@ -322,6 +323,12 @@ export class GameEngine {
   private layerName = ''
   private relics = new Set<string>()
   private barkedLowHp = false
+  // juice: brief world-freeze on impact, and a decaying kill streak
+  private hitStop = 0
+  private hitStopCd = 0
+  private combo = 0
+  private comboT = 0
+  private bestCombo = 0
   private spawnTimer = 0
   private swingFlip = 1
   private weapons: OwnedWeapon[] = []
@@ -629,6 +636,7 @@ export class GameEngine {
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
     this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + this.stats.maxHp * 0.12)
     this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${this.stage} CLEARED!`, '#69db7c', 30)
+    audio.play('stage')
     // A layer-lord just fell: Cael says goodbye to someone he knew.
     if (isLordStage(this.stage)) {
       const layer = layerForStage(this.stage)
@@ -647,6 +655,7 @@ export class GameEngine {
     this.status = 'victory'
     this.enemies = []
     this.floatText(this.hero.x, this.hero.y - 60, '👑 ALDERMERE RECLAIMED', '#ffd43b', 34)
+    audio.play('victory')
     this.opts.onStageCleared(this.stage)
     this.opts.onRunEnd({ clearedStage: this.stage, kills: this.kills })
     this.emit()
@@ -983,6 +992,7 @@ export class GameEngine {
   }
 
   private activateSkill(os: OwnedSkill) {
+    audio.play('cast')
     if (this.status !== 'playing') return
     switch (os.id) {
       case 'dash': this.castDash(os.level); break
@@ -1530,6 +1540,13 @@ export class GameEngine {
     }
     e.hp -= dmg
     e.hitFlash = 0.1
+    audio.play(crit ? 'crit' : 'hit', Math.min(1, this.combo / 20))
+    // A crit briefly freezes the world so the hit lands with weight — but rate
+    // limited, or a high-crit late build would stutter constantly.
+    if (crit && this.hitStopCd <= 0) {
+      this.hitStop = Math.max(this.hitStop, 0.045)
+      this.hitStopCd = 0.35
+    }
     // frost sword chills foes on melee hits
     if (!fromAbility && this.swordStyleId === 'frost') e.slowT = 1.2
     this.floatText(e.x, e.y - e.radius, `${Math.round(dmg)}`, crit ? '#ffd43b' : '#fff', crit ? 22 : 16)
@@ -1585,6 +1602,7 @@ export class GameEngine {
 
   /** Draw the wind-up warning for a lord's signature attack. */
   private telegraphLord(e: Enemy, aim: number) {
+    audio.play('lordWarn')
     const warn = 'rgba(255,90,70,0.75)'
     switch (e.lord) {
       case 1: // Roderin — shield slam around himself
@@ -1629,6 +1647,8 @@ export class GameEngine {
 
   /** The moment a lord's telegraphed attack actually lands. */
   private lordStrike(e: Enemy) {
+    audio.play('lordHit')
+    this.hitStop = Math.max(this.hitStop, 0.06)
     const h = this.hero
     const hit = (radius: number, mult: number) => {
       if (Math.hypot(h.x - e.x, h.y - e.y) < radius) this.hurtHero(e.damage * mult)
@@ -1669,6 +1689,12 @@ export class GameEngine {
     e.hp = 0
     this.kills++
     this.stageKills++
+    // kill streak: climbs while you keep killing, and pitches the sound up with it
+    this.combo++
+    this.comboT = 2.5
+    if (this.combo > this.bestCombo) this.bestCombo = this.combo
+    audio.play('kill', Math.min(1, this.combo / 20))
+    if (e.lord > 0) { this.hitStop = Math.max(this.hitStop, 0.12); audio.play('lordHit') }
     // A fallen champion always yields their layer's relic.
     if (e.lord > 0) {
       const layer = LAYERS[e.lord - 1]
@@ -1676,6 +1702,8 @@ export class GameEngine {
         this.relics.add(layer.relic.key)
         this.recomputeStats()
         this.floatText(e.x, e.y - 40, `${layer.relic.icon} ${layer.relic.name}`, '#ffd43b', 24)
+        audio.play('relic')
+        this.hitStop = Math.max(this.hitStop, 0.1)
         this.opts.onStory({
           id: `relic-${layer.relic.key}`,
           title: layer.relic.name,
@@ -1767,6 +1795,7 @@ export class GameEngine {
   }
 
   private collectPickup(type: PickupType) {
+    audio.play('pickup')
     const h = this.hero
     switch (type) {
       case 'heart':
@@ -1774,7 +1803,9 @@ export class GameEngine {
         this.floatText(h.x, h.y - 30, '+HP', '#69db7c', 22)
         break
       case 'gold': {
-        const g = 3 + Math.floor(Math.random() * 5)
+        // a hot streak pays better — the combo is worth chasing, not just pretty
+        const streak = 1 + Math.min(1, this.combo / 25)
+        const g = Math.round((3 + Math.floor(Math.random() * 5)) * streak)
         this.gold += g
         this.floatText(h.x, h.y - 30, `+${g}🪙`, '#ffd43b', 20)
         break
@@ -1948,6 +1979,12 @@ export class GameEngine {
     this.lastTs = ts
     if (dt > 0.05) dt = 0.05
     this.floorPhase += dt
+    // hit-stop: hold the world still for a few frames so impacts read as weight
+    if (this.hitStop > 0) {
+      this.hitStop -= dt
+      this.render()
+      return
+    }
     if (this.status === 'playing') this.update(dt)
     this.render()
   }
@@ -1955,6 +1992,13 @@ export class GameEngine {
   private update(dt: number) {
     const h = this.hero
     const s = this.stats
+
+    this.hitStopCd = Math.max(0, this.hitStopCd - dt)
+    // kill streak decays if you stop killing
+    if (this.comboT > 0) {
+      this.comboT -= dt
+      if (this.comboT <= 0) this.combo = 0
+    }
 
     // Health always regenerates. Mage Mana also recovers continuously.
     h.hp = Math.min(s.maxHp, h.hp + s.hpRegen * dt)
@@ -2584,6 +2628,7 @@ export class GameEngine {
       this.floatText(h.x, h.y - 42, `+${restored} MANA`, '#74c0fc', 16)
     }
     h.hp -= dmg
+    audio.play('hurt')
     // Cael notices when you're about to die (once per stage, so it stays meaningful).
     if (h.hp > 0 && h.hp < this.stats.maxHp * 0.25 && !this.barkedLowHp) {
       this.barkedLowHp = true
@@ -2614,6 +2659,7 @@ export class GameEngine {
   private endRun() {
     if (this.status === 'dead') return
     this.status = 'dead'
+    audio.play('death')
     this.opts.onRunEnd({ clearedStage: Math.max(0, this.stage - 1), kills: this.kills })
     this.emit()
   }
@@ -3525,6 +3571,8 @@ export class GameEngine {
       swordStyleName: SWORD_STYLES[this.swordStyleId].name,
       swordStyleIcon: SWORD_STYLES[this.swordStyleId].icon,
       biome: this.layerName || BIOMES[this.biome].name,
+      combo: this.combo,
+      comboPct: Math.max(0, Math.min(1, this.comboT / 2.5)),
       depth: depthForStage(this.stage),
       maxDepth: LAYERS.length,
       finalStage: FINAL_STAGE,

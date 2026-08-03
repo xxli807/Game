@@ -17,6 +17,14 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
         </span>
       </div>
 
+      {/* kill streak — climbs as you chain kills, drains when you stop */}
+      {state.combo >= 3 && (
+        <div className={`combo${state.combo >= 15 ? ' combo-hot' : ''}`}>
+          <div className="combo-count">{state.combo}<span>×</span></div>
+          <div className="combo-bar"><div className="combo-fill" style={{ width: `${state.comboPct * 100}%` }} /></div>
+        </div>
+      )}
+
       {/* survival clock */}
       <div className="clock">{mm}:{ss.toString().padStart(2, '0')}</div>
 

@@ -339,6 +339,8 @@ export interface HudState {
   swordStyleName: string
   swordStyleIcon: string
   biome: string
+  combo: number // current kill streak
+  comboPct: number // 0..1 time left before the streak drops
   depth: number // which layer of the descent (1..4)
   maxDepth: number
   finalStage: number
