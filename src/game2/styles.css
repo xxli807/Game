@@ -794,3 +794,44 @@ body {
   color: #f4ecff; font-size: 15px; line-height: 1;
 }
 .mute-btn:hover { border-color: rgba(255,180,90,0.6); }
+
+/* ---------- sound check ---------- */
+.sound-check {
+  margin: 4px auto 10px; max-width: 46rem; width: 100%;
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+  background: rgba(255,255,255,0.03); padding: 8px 14px;
+}
+.sound-check summary { cursor: pointer; font-size: 13px; opacity: 0.85; }
+.sound-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sound-btn {
+  padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #f4ecff;
+}
+.sound-btn:hover { border-color: rgba(255,180,90,0.6); }
+
+/* ---------- embers & permanent upgrades ---------- */
+.ember-purse {
+  text-align: center; font-size: clamp(14px, 3vw, 17px); color: #ffd9a0; margin-bottom: 4px;
+}
+.ember-purse b { color: #ffb45a; font-size: 1.15em; }
+.ember-gain { color: #8ce99a; font-size: 0.82em; margin-left: 6px; }
+.upgrade-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px; width: 100%; margin-bottom: 6px;
+}
+.upgrade {
+  display: flex; flex-direction: column; gap: 4px; text-align: left;
+  padding: 10px 12px; border-radius: 10px; cursor: pointer; font-family: inherit;
+  background: rgba(15,18,30,0.7); border: 1px solid rgba(255,255,255,0.12); color: #e9ecff;
+}
+.upgrade:disabled { cursor: default; opacity: 0.5; }
+.upgrade.afford { border-color: rgba(255,180,90,0.55); }
+.upgrade.afford:hover { background: rgba(255,140,60,0.12); }
+.upgrade.maxed { border-color: rgba(140,233,154,0.5); opacity: 0.75; }
+.upgrade-top { display: flex; align-items: center; gap: 6px; }
+.upgrade-icon { font-size: 17px; }
+.upgrade-name { font-weight: 700; font-size: 13px; flex: 1; }
+.upgrade-lvl { font-size: 11px; opacity: 0.8; }
+.upgrade small { opacity: 0.75; line-height: 1.35; font-size: 12px; }
+.upgrade-cost { font-size: 12px; color: #ffb45a; font-weight: 700; }
+.ember-earned { color: #ffb45a; font-weight: 700; margin: 6px 0; }

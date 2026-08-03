@@ -34,8 +34,21 @@ export class AudioKit {
       if (!Ctor) return
       this.ctx = new Ctor()
       this.master = this.ctx.createGain()
-      this.master.gain.value = this.muted ? 0 : 0.5
-      this.master.connect(this.ctx.destination)
+      this.master.gain.value = this.muted ? 0 : 0.45
+      // Soften the whole mix: a gentle low-pass takes the harsh digital edge off
+      // synthesised tones, and a compressor keeps a busy fight from spiking.
+      const tame = this.ctx.createBiquadFilter()
+      tame.type = 'lowpass'
+      tame.frequency.value = 5200
+      const comp = this.ctx.createDynamicsCompressor()
+      comp.threshold.value = -18
+      comp.knee.value = 24
+      comp.ratio.value = 8
+      comp.attack.value = 0.004
+      comp.release.value = 0.18
+      this.master.connect(tame)
+      tame.connect(comp)
+      comp.connect(this.ctx.destination)
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume()
   }
@@ -70,28 +83,33 @@ export class AudioKit {
     this.played++
 
     switch (name) {
-      case 'hit': return this.noise(t, 0.05, 900 + intensity * 700, 0.13)
+      // A sword hit = a soft thump with body, not a hiss.
+      case 'hit': {
+        this.noise(t, 0.035, 420, 0.07)
+        return this.tone(t, 'sine', 190 + intensity * 60, 95, 0.075, 0.13)
+      }
       case 'crit': {
-        this.noise(t, 0.08, 1800, 0.2)
-        return this.tone(t, 'square', 620, 300, 0.09, 0.1)
+        this.noise(t, 0.05, 900, 0.09)
+        this.tone(t, 'sine', 250, 110, 0.1, 0.15)
+        return this.tone(t + 0.02, 'triangle', 880, 660, 0.1, 0.06)
       }
-      case 'kill': return this.tone(t, 'triangle', 300 + intensity * 260, 90, 0.12, 0.11)
-      case 'gem': return this.tone(t, 'sine', 700 + intensity * 500, 1150 + intensity * 500, 0.07, 0.075)
+      case 'kill': return this.tone(t, 'triangle', 420 + intensity * 260, 210, 0.1, 0.09)
+      case 'gem': return this.tone(t, 'sine', 780 + intensity * 420, 1180 + intensity * 420, 0.06, 0.055)
       case 'pickup': {
-        this.tone(t, 'sine', 620, 900, 0.09, 0.11)
-        return this.tone(t + 0.07, 'sine', 900, 1320, 0.1, 0.09)
+        this.tone(t, 'sine', 660, 880, 0.08, 0.09)
+        return this.tone(t + 0.06, 'sine', 990, 1320, 0.09, 0.07)
       }
-      case 'stage': return this.arp(t, [523, 659, 784, 1047], 0.09, 0.12)
-      case 'cast': return this.tone(t, 'sawtooth', 260, 620, 0.14, 0.085)
+      case 'stage': return this.arp(t, [523, 659, 784, 1047], 0.09, 0.1)
+      case 'cast': return this.tone(t, 'triangle', 330, 620, 0.11, 0.07)
       case 'hurt': {
-        this.noise(t, 0.14, 420, 0.16)
-        return this.tone(t, 'sawtooth', 200, 90, 0.18, 0.1)
+        this.noise(t, 0.1, 300, 0.1)
+        return this.tone(t, 'sine', 230, 110, 0.16, 0.12)
       }
-      case 'death': return this.arp(t, [392, 330, 262, 196], 0.28, 0.16)
-      case 'lordWarn': return this.tone(t, 'square', 150, 150, 0.5, 0.09)
+      case 'death': return this.arp(t, [392, 330, 262, 196], 0.28, 0.13)
+      case 'lordWarn': return this.tone(t, 'triangle', 160, 140, 0.45, 0.075)
       case 'lordHit': {
-        this.noise(t, 0.3, 220, 0.28)
-        return this.tone(t, 'sawtooth', 110, 55, 0.36, 0.16)
+        this.noise(t, 0.22, 260, 0.14)
+        return this.tone(t, 'sine', 120, 55, 0.34, 0.18)
       }
       case 'relic': return this.arp(t, [523, 784, 1047, 1319], 0.16, 0.13)
       case 'victory': return this.arp(t, [523, 659, 784, 1047, 1319], 0.3, 0.16)

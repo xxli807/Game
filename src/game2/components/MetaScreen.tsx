@@ -1,17 +1,20 @@
-import { ClassId, CLASSES, MetaState } from '../game/types'
+import { ClassId, CLASSES, MetaState, META_UPGRADES, upgradeCost } from '../game/types'
+import { audio, Sfx } from '../game/audio'
 import { LAYERS, STAGES_PER_LAYER, FINAL_STAGE, chapterRecap, weaponNoun } from '../game/story'
 
 interface Props {
   meta: MetaState
   classId: ClassId
   onClassChange: (classId: ClassId) => void
+  onBuy: (id: string) => void
+  lastEarned: number
   onStart: () => void
 }
 
 // The Last Ember — the campfire you return to between descents.
 // This is the story hub: what has happened so far, how deep you've been,
 // which champions you've laid to rest, and Cael waiting to go again.
-export default function MetaScreen({ meta, classId, onClassChange, onStart }: Props) {
+export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEarned, onStart }: Props) {
   const selectedClass = CLASSES[classId]
   const deepest = Math.min(meta.deepestLayer, LAYERS.length)
   const firstRun = meta.runs === 0
@@ -25,6 +28,11 @@ export default function MetaScreen({ meta, classId, onClassChange, onStart }: Pr
           Aldermere is hollow. You are the last of the Oathbound — and the {weaponNoun(classId)} you
           carry still has your oldest friend inside it.
         </p>
+
+        <div className="ember-purse">
+          🔥 <b>{meta.embers}</b> embers
+          {lastEarned > 0 && <span className="ember-gain"> +{lastEarned} from your last descent</span>}
+        </div>
 
         <div className="ember-story">
           <div className="ember-chapter">
@@ -90,15 +98,64 @@ export default function MetaScreen({ meta, classId, onClassChange, onStart }: Pr
           <button className="play-btn descend-btn" onClick={onStart}>▼ Descend</button>
         </div>
 
+        {/* Rekindling Aldermere: permanent upgrades bought with embers */}
+        <h2 className="forge-title">🔨 Rekindle Aldermere</h2>
+        <p className="forge-note">
+          Embers come back with you from every descent — won or lost. Spend them here;
+          these gains are permanent.
+        </p>
+        <div className="upgrade-grid">
+          {META_UPGRADES.map((u) => {
+            const level = meta.upgrades[u.id] ?? 0
+            const maxed = level >= u.maxLevel
+            const cost = upgradeCost(u, level)
+            const afford = meta.embers >= cost
+            return (
+              <button
+                key={u.id}
+                className={`upgrade${maxed ? ' maxed' : afford ? ' afford' : ''}`}
+                onClick={() => onBuy(u.id)}
+                disabled={maxed || !afford}
+              >
+                <div className="upgrade-top">
+                  <span className="upgrade-icon">{u.icon}</span>
+                  <span className="upgrade-name">{u.name}</span>
+                  <span className="upgrade-lvl">{level}/{u.maxLevel}</span>
+                </div>
+                <small>{u.desc}</small>
+                <div className="upgrade-cost">{maxed ? 'Maxed' : `🔥 ${cost}`}</div>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Sound check — click any sound to hear it in isolation. */}
+        <details className="sound-check">
+          <summary>🔊 Sound check</summary>
+          <div className="sound-grid">
+            {([
+              ['hit', 'Sword hit'], ['crit', 'Critical'], ['kill', 'Kill'],
+              ['gem', 'Gem'], ['pickup', 'Pickup'], ['stage', 'Stage clear'],
+              ['cast', 'Cast skill'], ['hurt', 'Take damage'], ['lordWarn', 'Lord wind-up'],
+              ['lordHit', 'Lord impact'], ['relic', 'Relic'], ['victory', 'Victory'],
+              ['death', 'Death'], ['ui', 'UI click'],
+            ] as [Sfx, string][]).map(([id, label]) => (
+              <button key={id} className="sound-btn" onClick={() => { audio.resume(); audio.play(id) }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </details>
+
         <div className="how-to">
           <h3>How to play</h3>
           <ul>
             <li><b>Move</b> with <b>WASD</b> or <b>arrow</b> keys — on a phone, <b>drag anywhere</b>.</li>
             <li>Your weapon <b>attacks by itself</b> — steer into the Hollow and it does the rest.</li>
-            <li>Each stage has a <b>fixed number of enemies</b>. Clear them to press deeper.</li>
+            <li>The Hollow <b>never stops coming</b> — each stage is a <b>kill quota</b>. Fill it to press deeper.</li>
             <li>Every <b>{STAGES_PER_LAYER} stages</b> a <b>layer-lord</b> waits — a champion Cael knew.</li>
             <li>After each stage, <b>pick one of three skills</b> (five slots; some combine into evolutions).</li>
-            <li>Each layer hides one <b>relic of Aldermere</b> — a powerful boon found nowhere else.</li>
+            <li>Each layer-lord yields a <b>relic of Aldermere</b> — a powerful boon found nowhere else.</li>
             <li>Reach <b>stage {FINAL_STAGE}</b> and beat the <b>Hollow King</b> to reclaim the kingdom.</li>
             <li>Active skills use <b>Q</b>, <b>E</b>, <b>Space</b>, <b>R</b>, <b>F</b>. <b>Pause</b> with <b>P</b>.</li>
           </ul>

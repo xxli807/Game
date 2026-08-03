@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { GameEngine, WIDTH, HEIGHT } from './game/engine'
-import { baseStats, ClassId, HudState, MetaState } from './game/types'
+import { ClassId, HudState, MetaState, META_UPGRADES, statsFromMeta, upgradeCost, embersEarned } from './game/types'
 import { loadMeta, saveMeta } from './game/meta'
 import HUD from './components/HUD'
 import LevelUpModal from './components/LevelUpModal'
@@ -45,14 +45,35 @@ export default function App() {
     })
   }
 
+  const [earned, setEarned] = useState(0)
+
   const handleRunEnd = (r: { clearedStage: number; kills: number }) => {
     setMeta((m) => {
+      // every descent pays out, win or lose — a failed run still moves you forward
+      const won = r.clearedStage >= FINAL_STAGE
+      const gained = embersEarned(m, r.clearedStage, r.kills, won)
+      setEarned(gained)
       const next: MetaState = {
         ...m,
         bestStage: Math.max(m.bestStage, r.clearedStage),
         totalKills: m.totalKills + r.kills,
         runs: m.runs + 1,
+        embers: m.embers + gained,
       }
+      saveMeta(next)
+      return next
+    })
+  }
+
+  const buyUpgrade = (id: string) => {
+    setMeta((m) => {
+      const u = META_UPGRADES.find((x) => x.id === id)
+      if (!u) return m
+      const level = m.upgrades[id] ?? 0
+      if (level >= u.maxLevel) return m
+      const cost = upgradeCost(u, level)
+      if (m.embers < cost) return m
+      const next: MetaState = { ...m, embers: m.embers - cost, upgrades: { ...m.upgrades, [id]: level + 1 } }
       saveMeta(next)
       return next
     })
@@ -61,7 +82,7 @@ export default function App() {
   if (!inRun) {
     return (
       <div className="app">
-        <MetaScreen meta={meta} classId={classId} onClassChange={setClassId} onStart={() => { audio.resume(); audio.play('ui'); setInRun(true) }} />
+        <MetaScreen meta={meta} classId={classId} onClassChange={setClassId} onBuy={buyUpgrade} lastEarned={earned} onStart={() => { audio.resume(); audio.play('ui'); setInRun(true) }} />
       </div>
     )
   }
@@ -69,6 +90,8 @@ export default function App() {
   return (
     <div className="app">
       <GameScreen
+        earned={earned}
+        meta={meta}
         classId={classId}
         onStageCleared={handleStageCleared}
         onRelicFound={handleRelicFound}
@@ -80,12 +103,16 @@ export default function App() {
 }
 
 function GameScreen({
+  earned,
+  meta,
   classId,
   onStageCleared,
   onRelicFound,
   onRunEnd,
   onExit,
 }: {
+  earned: number
+  meta: MetaState
   classId: ClassId
   onStageCleared: (stage: number) => void
   onRelicFound: (key: string) => void
@@ -123,7 +150,7 @@ function GameScreen({
   useEffect(() => {
     if (!canvasRef.current) return
     const engine = new GameEngine(canvasRef.current, {
-      stats: baseStats(),
+      stats: statsFromMeta(meta),
       classId,
       onState: setHud,
       onStageCleared,
@@ -180,7 +207,8 @@ function GameScreen({
             <h1>💀 You Fell</h1>
             <p className="cael-line">“{randomLine(DEATH_LINES)}”<br /><span className="cael-tag">— Cael</span></p>
             <p>You reached <b>Stage {hud.stage}</b> and laid <b>{hud.runKills}</b> of the Hollow to rest.</p>
-            <p className="death-hint">The Ember calls you back. Descend again.</p>
+            <p className="ember-earned">🔥 +{earned} embers carried back</p>
+            <p className="death-hint">The Ember calls you back. Spend them, then descend again.</p>
             <button className="play-btn" onClick={onExit}>🔥 Back to the Ember</button>
           </div>
         </div>
@@ -192,6 +220,7 @@ function GameScreen({
             <h1>👑 Aldermere Reclaimed</h1>
             <p className="cael-line">“{VICTORY_LINES[0]}”<br />“{VICTORY_LINES[1]}”<br /><span className="cael-tag">— Cael</span></p>
             <p>You cleared all <b>{hud.stage}</b> stages and took back the throne.</p>
+            <p className="ember-earned">🔥 +{earned} embers carried back</p>
             <button className="play-btn" onClick={onExit}>🏰 Return to the Ember</button>
           </div>
         </div>

@@ -18,6 +18,8 @@ export function loadMeta(): MetaState {
       lordsLaidToRest: parsed.lordsLaidToRest ?? base.lordsLaidToRest,
       relicsFound: parsed.relicsFound ?? base.relicsFound,
       victories: parsed.victories ?? base.victories,
+      embers: parsed.embers ?? base.embers,
+      upgrades: parsed.upgrades ?? base.upgrades,
     }
   } catch {
     return defaultMeta()

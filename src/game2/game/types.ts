@@ -96,13 +96,59 @@ export interface MetaState {
   lordsLaidToRest: string[] // relic/lord keys you've put to rest
   relicsFound: string[]
   victories: number
+  // embers: the currency carried back from every descent, spent at the hub
+  embers: number
+  upgrades: Record<string, number>
 }
 
 export function defaultMeta(): MetaState {
   return {
     bestStage: 0, totalKills: 0, runs: 0,
     deepestLayer: 0, lordsLaidToRest: [], relicsFound: [], victories: 0,
+    embers: 0, upgrades: {},
   }
+}
+
+// ---------- Permanent upgrades bought at the Last Ember ----------
+export interface MetaUpgrade {
+  id: string
+  name: string
+  icon: string
+  desc: string
+  maxLevel: number
+  baseCost: number
+}
+
+export const META_UPGRADES: MetaUpgrade[] = [
+  { id: 'vigour', name: 'Oathbound Vigour', icon: '❤️', desc: '+25 maximum health per level.', maxLevel: 5, baseCost: 30 },
+  { id: 'edge', name: 'Whetted Edge', icon: '⚔️', desc: '+8% weapon damage per level.', maxLevel: 5, baseCost: 35 },
+  { id: 'stride', name: "Wanderer's Stride", icon: '👟', desc: '+4% movement speed per level.', maxLevel: 4, baseCost: 30 },
+  { id: 'focus', name: 'Kindled Focus', icon: '🔵', desc: '+10 maximum resource per level.', maxLevel: 4, baseCost: 30 },
+  { id: 'fortune', name: "Ember's Fortune", icon: '🪙', desc: '+15% embers earned per level.', maxLevel: 4, baseCost: 40 },
+  { id: 'reach', name: 'Long Reach', icon: '🧲', desc: '+20% pickup radius per level.', maxLevel: 3, baseCost: 25 },
+]
+
+/** Costs climb so later levels are a real decision. */
+export function upgradeCost(u: MetaUpgrade, level: number): number {
+  return Math.round(u.baseCost * Math.pow(1.6, level))
+}
+
+/** Fold the player's permanent upgrades into the run's starting stats. */
+export function statsFromMeta(meta: MetaState): Stats {
+  const s = baseStats()
+  const lvl = (id: string) => meta.upgrades[id] ?? 0
+  s.maxHp += 25 * lvl('vigour')
+  s.swordDamage *= 1 + 0.08 * lvl('edge')
+  s.moveSpeed *= 1 + 0.04 * lvl('stride')
+  s.maxRage += 10 * lvl('focus')
+  s.pickupRadius *= 1 + 0.2 * lvl('reach')
+  return s
+}
+
+/** Embers earned from a finished descent. */
+export function embersEarned(meta: MetaState, stageReached: number, kills: number, won: boolean): number {
+  const base = kills + stageReached * 12 + (won ? 150 : 0)
+  return Math.max(1, Math.round(base * (1 + 0.15 * (meta.upgrades.fortune ?? 0))))
 }
 
 // ---------- Class and run-based skill system ----------
