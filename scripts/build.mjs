@@ -20,5 +20,9 @@ run('vite build', { TARGET: 'game2' })
 
 // Drop the launcher at the site root.
 copyFileSync('launcher.html', 'dist/index.html')
+// 404 handler forwards any other spelling to the canonical path — /Game/V2,
+// /Game/game2 etc. all land on /Game/v2. (Duplicating the folders instead would
+// break on case-insensitive filesystems like macOS, and double the artifact.)
+copyFileSync('404.html', 'dist/404.html')
 
 console.log('\n✓ built dist/index.html (launcher) + dist/v1 + dist/v2')

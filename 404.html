@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Finding your game…</title>
+    <script>
+      // GitHub Pages serves static files case-sensitively, so /Game/V2/ or
+      // /Game/GAME2/ would 404. This page catches those misses and forwards to
+      // the canonical lower-case path, so the URL is effectively case-insensitive
+      // for everything after the repository name.
+      (function () {
+        var parts = location.pathname.split('/').filter(Boolean)
+        // parts[0] is the repo segment (already matched by Pages to get here)
+        var base = parts.length ? '/' + parts[0] + '/' : '/'
+        var rest = parts.slice(1)
+        var known = { v1: 'v1', v2: 'v2', version1: 'v1', version2: 'v2', game1: 'v1', game2: 'v2' }
+        var first = (rest[0] || '').toLowerCase()
+        var target = known[first]
+        var dest
+        if (target) {
+          // keep any deeper path (assets, etc.) intact after fixing the version segment
+          dest = base + target + '/' + rest.slice(1).join('/')
+        } else {
+          // unknown path — send them to the launcher so they can pick a version
+          dest = base
+        }
+        dest += location.search + location.hash
+        if (dest !== location.pathname + location.search + location.hash) {
+          location.replace(dest)
+        }
+      })()
+    </script>
+    <style>
+      body {
+        margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        background: radial-gradient(90% 60% at 50% 0%, #2a1220, #150a16 45%, #08050b);
+        color: #f4ecff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        text-align: center; padding: 2rem;
+      }
+      a { color: #ffb45a; }
+    </style>
+  </head>
+  <body>
+    <div>
+      <p style="font-size:2rem;margin:0 0 .5rem">🔥</p>
+      <p>Taking you to the game…</p>
+      <p><a href="./">Open the launcher</a></p>
+    </div>
+  </body>
+</html>
