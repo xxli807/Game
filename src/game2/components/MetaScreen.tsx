@@ -156,6 +156,7 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
             <li>Every <b>{STAGES_PER_LAYER} stages</b> a <b>layer-lord</b> waits — a champion Cael knew.</li>
             <li>After each stage, <b>pick one of three skills</b> (five slots; some combine into evolutions).</li>
             <li>Each layer-lord yields a <b>relic of Aldermere</b> — a powerful boon found nowhere else.</li>
+            <li><b>Elites</b> and <b>bosses</b> drop <b>🎁 caches</b>: a free extra skill pick, mid-fight.</li>
             <li>Reach <b>stage {FINAL_STAGE}</b> and beat the <b>Hollow King</b> to reclaim the kingdom.</li>
             <li>Active skills use <b>Q</b>, <b>E</b>, <b>Space</b>, <b>R</b>, <b>F</b>. <b>Pause</b> with <b>P</b>.</li>
           </ul>

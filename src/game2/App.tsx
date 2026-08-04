@@ -184,6 +184,7 @@ function GameScreen({
           cards={hud.cards}
           skills={hud.skills}
           clearedStage={hud.stage}
+          bonus={hud.bonusDraft}
           onPick={(id) => engineRef.current?.chooseCard(id)}
         />
       )}

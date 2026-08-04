@@ -323,6 +323,7 @@ export class GameEngine {
   private layerName = ''
   private relics = new Set<string>()
   private barkedLowHp = false
+  private bonusDraft = false
   // juice: brief world-freeze on impact, and a decaying kill streak
   private hitStop = 0
   private hitStopCd = 0
@@ -535,6 +536,7 @@ export class GameEngine {
   /** Set the current layer from the stage; narrate layer changes and boss (layer-lord) stages. */
   private enterStage(stage: number) {
     this.barkedLowHp = false
+    this.bonusDraft = false
     const layer = layerForStage(stage)
     this.biome = layer.biome
     this.layerName = layer.name
@@ -600,8 +602,24 @@ export class GameEngine {
     if (this.status !== 'skillselect') return
     const action = this.choiceActions[id]
     if (action) action()
-    this.startStage(this.stage + 1)
+    if (this.bonusDraft) {
+      // a cache pick: you keep fighting the same stage
+      this.bonusDraft = false
+      this.status = 'playing'
+      this.lastTs = performance.now()
+    } else {
+      this.startStage(this.stage + 1)
+    }
     this.emit()
+  }
+
+  /** An out-of-band skill pick (from a cache) that doesn't advance the descent. */
+  private openBonusDraft() {
+    if (this.status !== 'playing') return
+    this.bonusDraft = true
+    this.status = 'skillselect'
+    this.buildChoices()
+    audio.play('relic')
   }
 
   private stageEnemyTotal(stage = this.stage): number {
@@ -824,7 +842,7 @@ export class GameEngine {
     y = Math.max(20, Math.min(WORLD_H - 20, y))
 
     // special "elite" beasts: rarer, tougher, glowing — worth big rewards
-    const eliteChance = kind === 'boss' ? 0 : Math.min(0.16, 0.02 + this.stage * 0.008)
+    const eliteChance = kind === 'boss' ? 0 : Math.min(0.22, 0.05 + this.stage * 0.015)
     const elite = Math.random() < eliteChance
     const hp = spec.hp * (elite ? 2.6 : 1)
 
@@ -1102,13 +1120,17 @@ export class GameEngine {
   }
 
   private applyPassive(s: Stats, id: SkillId, lvl: number) {
+    // Passives ramp faster at high levels: committing five picks to one line
+    // should feel genuinely broken, not merely tidy.
+    const mastery = lvl >= 5 ? 1.35 : lvl >= 4 ? 1.15 : 1
+    lvl = lvl * mastery
     switch (id) {
-      case 'power': s.swordDamage *= 1 + 0.08 * lvl; break
+      case 'power': s.swordDamage *= 1 + 0.10 * lvl; break
       case 'haste': break
-      case 'vitality': s.maxHp += 45 * lvl; break
+      case 'vitality': s.maxHp += 55 * lvl; break
       case 'precision':
-        s.swordDamage *= 1 + 0.12 * lvl
-        s.critMult += 0.15 * lvl
+        s.swordDamage *= 1 + 0.15 * lvl
+        s.critMult += 0.2 * lvl
         s.swordRange += 8 * lvl
         break
       case 'thorns': break
@@ -1767,7 +1789,10 @@ export class GameEngine {
     }
 
     if (e.kind === 'boss') this.shake(16)
-    else if (e.elite) this.shake(6)
+    else if (e.elite) {
+      this.shake(6)
+      if (Math.random() < 0.35) this.dropPickup(e.x, e.y, 'chest')
+    }
     this.checkSwordTier()
   }
 
@@ -1838,6 +1863,8 @@ export class GameEngine {
         this.floatText(h.x, h.y - 30, '⏱ FREEZE!', '#a5d8ff', 26)
         break
       case 'chest': {
+        // a cache of Aldermere: a free skill pick, the real prize
+        this.openBonusDraft()
         this.gold += 25
         h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.35)
         this.floatText(h.x, h.y - 36, '🎁 TREASURE!', '#ffd43b', 30)
@@ -3593,6 +3620,7 @@ export class GameEngine {
       abilities: ab,
       skills: this.skills.map((os) => ({ id: os.id, level: os.level })),
       cards: this.status === 'skillselect' ? this.choices : [],
+      bonusDraft: this.bonusDraft,
       runKills: this.kills,
     }
     this.opts.onState(state)

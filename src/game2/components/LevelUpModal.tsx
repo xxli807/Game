@@ -11,10 +11,11 @@ interface Props {
   cards: DraftChoice[]
   skills: OwnedSkill[]
   clearedStage: number
+  bonus?: boolean
   onPick: (id: string) => void
 }
 
-export default function LevelUpModal({ cards, skills, clearedStage, onPick }: Props) {
+export default function LevelUpModal({ cards, skills, clearedStage, bonus, onPick }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === '1' && cards[0]) onPick(cards[0].id)
@@ -28,8 +29,8 @@ export default function LevelUpModal({ cards, skills, clearedStage, onPick }: Pr
   return (
     <div className="overlay">
       <div className="levelup">
-        <h2>✓ STAGE {clearedStage} CLEARED!</h2>
-        <p className="levelup-sub">Choose a skill before the next stage</p>
+        <h2>{bonus ? '🎁 CACHE OF ALDERMERE' : `✓ STAGE ${clearedStage} CLEARED!`}</h2>
+        <p className="levelup-sub">{bonus ? 'A free pick — the fight is still on' : 'Choose a skill before the next stage'}</p>
         <div className="levelup-loadout">
           <span className="levelup-loadout-label">Current skills</span>
           <div className="levelup-skills">

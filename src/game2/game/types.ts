@@ -394,5 +394,6 @@ export interface HudState {
   abilities: AbilityView[]
   skills: OwnedSkill[]
   cards: DraftChoice[]
+  bonusDraft: boolean // a cache pick, not a stage-clear pick
   runKills: number
 }
