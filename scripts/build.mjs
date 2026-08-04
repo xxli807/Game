@@ -1,7 +1,8 @@
-// Build both games into one dist/ for GitHub Pages:
+// Build all games into one dist/ for GitHub Pages:
 //   dist/index.html  → launcher (served at /Game/)
 //   dist/v1/         → game1    (served at /Game/v1/)
 //   dist/v2/         → game2    (served at /Game/v2/)
+//   dist/v3/         → game3    (served at /Game/v3/)
 import { execSync } from 'node:child_process'
 import { copyFileSync, rmSync } from 'node:fs'
 
@@ -17,6 +18,7 @@ run('tsc --noEmit')
 // Build each game with its own root/outDir (see vite.config.ts).
 run('vite build', { TARGET: 'game1' })
 run('vite build', { TARGET: 'game2' })
+run('vite build', { TARGET: 'game3' })
 
 // Drop the launcher at the site root.
 copyFileSync('launcher.html', 'dist/index.html')
@@ -25,4 +27,4 @@ copyFileSync('launcher.html', 'dist/index.html')
 // break on case-insensitive filesystems like macOS, and double the artifact.)
 copyFileSync('404.html', 'dist/404.html')
 
-console.log('\n✓ built dist/index.html (launcher) + dist/v1 + dist/v2')
+console.log('\n✓ built dist/index.html (launcher) + dist/v1 + dist/v2 + dist/v3')

@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:v2": "TARGET=game2 vite",
+    "dev:v2": "vite --mode game2",
+    "dev:v3": "vite --mode game3",
     "build": "node scripts/build.mjs",
-    "build:v1": "TARGET=game1 vite build",
-    "build:v2": "TARGET=game2 vite build",
+    "build:v1": "vite build --mode game1",
+    "build:v2": "vite build --mode game2",
+    "build:v3": "vite build --mode game3",
     "preview": "vite preview",
-    "preview:v2": "TARGET=game2 vite preview"
+    "preview:v2": "vite preview --mode game2",
+    "preview:v3": "vite preview --mode game3"
   },
   "dependencies": {
     "react": "^18.3.1",

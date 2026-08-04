@@ -14,7 +14,7 @@
         // parts[0] is the repo segment (already matched by Pages to get here)
         var base = parts.length ? '/' + parts[0] + '/' : '/'
         var rest = parts.slice(1)
-        var known = { v1: 'v1', v2: 'v2', version1: 'v1', version2: 'v2', game1: 'v1', game2: 'v2' }
+        var known = { v1: 'v1', v2: 'v2', v3: 'v3', version1: 'v1', version2: 'v2', version3: 'v3', game1: 'v1', game2: 'v2', game3: 'v3' }
         var first = (rest[0] || '').toLowerCase()
         var target = known[first]
         var dest
