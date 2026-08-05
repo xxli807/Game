@@ -194,10 +194,10 @@ function GameScreen({
       {hud?.status === 'paused' && !story && (
         <div className="overlay">
           <div className="death-card">
-            <h1>⏸ Paused</h1>
-            <p>Stage <b>{hud.stage}</b> · <b>{hud.kills}</b> monsters beaten</p>
-            <button className="play-btn" onClick={() => engineRef.current?.resume()}>▶ Resume</button>
-            <button className="exit-btn-inline" onClick={onExit}>Quit to Menu</button>
+            <h1>⏸ 已暂停</h1>
+            <p>第 <b>{hud.stage}</b> 关 · 已击败 <b>{hud.kills}</b> 只怪物</p>
+            <button className="play-btn" onClick={() => engineRef.current?.resume()}>▶ 继续</button>
+            <button className="exit-btn-inline" onClick={onExit}>退出到主界面</button>
           </div>
         </div>
       )}
@@ -205,12 +205,12 @@ function GameScreen({
       {hud?.status === 'dead' && (
         <div className="overlay">
           <div className="death-card">
-            <h1>💀 You Fell</h1>
+            <h1>💀 你倒下了</h1>
             <p className="cael-line">“{randomLine(DEATH_LINES)}”<br /><span className="cael-tag">— Cael</span></p>
-            <p>You reached <b>Stage {hud.stage}</b> and laid <b>{hud.runKills}</b> of the Hollow to rest.</p>
-            <p className="ember-earned">🔥 +{earned} embers carried back</p>
-            <p className="death-hint">The Ember calls you back. Spend them, then descend again.</p>
-            <button className="play-btn" onClick={onExit}>🔥 Back to the Ember</button>
+            <p>你抵达了第 <b>{hud.stage}</b> 关，让 <b>{hud.runKills}</b> 个空蚀之物安息。</p>
+            <p className="ember-earned">🔥 带回 {earned} 点余烬</p>
+            <p className="death-hint">余烬在召唤你。花掉它们，然后再次下潜。</p>
+            <button className="play-btn" onClick={onExit}>🔥 回到最后的余烬</button>
           </div>
         </div>
       )}
@@ -218,11 +218,11 @@ function GameScreen({
       {hud?.status === 'victory' && (
         <div className="overlay">
           <div className="death-card victory-card">
-            <h1>👑 Aldermere Reclaimed</h1>
+            <h1>👑 奥德米尔已夺回</h1>
             <p className="cael-line">“{VICTORY_LINES[0]}”<br />“{VICTORY_LINES[1]}”<br /><span className="cael-tag">— Cael</span></p>
-            <p>You cleared all <b>{hud.stage}</b> stages and took back the throne.</p>
+            <p>你通关全部 <b>{hud.stage}</b> 关，夺回了王座。</p>
             <p className="ember-earned">🔥 +{earned} embers carried back</p>
-            <button className="play-btn" onClick={onExit}>🏰 Return to the Ember</button>
+            <button className="play-btn" onClick={onExit}>🏰 返回余烬营地</button>
           </div>
         </div>
       )}
@@ -232,8 +232,8 @@ function GameScreen({
           {hud.status === 'paused' ? '▶' : '⏸'}
         </button>
       )}
-      <button className="mute-btn" onClick={() => { audio.resume(); setMuted(audio.toggleMute()) }} title={muted ? 'Unmute' : 'Mute'}>{muted ? '🔇' : '🔊'}</button>
-      <button className="fs-btn" onClick={toggleFullscreen} title="Fullscreen">⛶</button>
+      <button className="mute-btn" onClick={() => { audio.resume(); setMuted(audio.toggleMute()) }} title={muted ? '取消静音' : '静音'}>{muted ? '🔇' : '🔊'}</button>
+      <button className="fs-btn" onClick={toggleFullscreen} title="全屏">⛶</button>
       <button className="exit-btn" onClick={onExit}>✕</button>
     </div>
     </div>

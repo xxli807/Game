@@ -20,22 +20,22 @@ export interface Palette {
 
 export const BIOMES: Record<Biome, Palette> = {
   dungeon: {
-    name: 'Dungeon',
+    name: '地牢',
     floorA: '#2b2f48', floorB: '#252940', grout: '#191c30', wall: '#161829', wallEdge: '#2f3454',
     accent: '#8c9eff', torch: '#ffb347', fog: 'rgba(12,14,28,0.0)', body: '#cfd3e0', bodyDark: '#9aa0b8',
   },
   forest: {
-    name: 'Whispering Forest',
+    name: '低语森林',
     floorA: '#2f4a34', floorB: '#28422e', grout: '#1b2e20', wall: '#16281a', wallEdge: '#2f5236',
     accent: '#7be08a', torch: '#ffe066', fog: 'rgba(20,40,24,0.0)', body: '#6fae5c', bodyDark: '#4c7d3e',
   },
   snow: {
-    name: 'Frostbite Peaks',
+    name: '霜咬峰',
     floorA: '#3d4d61', floorB: '#36465b', grout: '#2a3646', wall: '#223042', wallEdge: '#48607c',
     accent: '#9ad4ff', torch: '#bfe3ff', fog: 'rgba(200,225,255,0.05)', body: '#aecfe6', bodyDark: '#7ba5c4',
   },
   volcano: {
-    name: 'Emberdeep Caverns',
+    name: '烬渊洞窟',
     floorA: '#3d2626', floorB: '#361f1f', grout: '#241414', wall: '#1e1010', wallEdge: '#5a2a22',
     accent: '#ff7a5c', torch: '#ff922b', fog: 'rgba(60,20,10,0.04)', body: '#b0472f', bodyDark: '#7d2f1f',
   },
@@ -97,11 +97,11 @@ export interface SwordStyle {
 }
 
 export const SWORD_STYLES: Record<SwordStyleId, SwordStyle> = {
-  steel: { id: 'steel', name: 'Steel Longsword', icon: '⚔️', blade: '#c2ccd8', edge: '#f2f6fb', glow: 'rgba(180,210,240,0.5)', spark: '#e9f2ff', effect: '+8% crit chance' },
-  ember: { id: 'ember', name: 'Emberbrand', icon: '🔥', blade: '#ff6a2b', edge: '#ffd08a', glow: 'rgba(255,120,40,0.8)', spark: '#ffb347', effect: '+12% damage, burning hits' },
-  stone: { id: 'stone', name: 'Stonecleaver', icon: '🪨', blade: '#8b8577', edge: '#d8d2c4', glow: 'rgba(180,140,90,0.5)', spark: '#c9a066', effect: 'Heavy knockback' },
-  frost: { id: 'frost', name: 'Frostbite Edge', icon: '❄️', blade: '#7fd3f2', edge: '#e6faff', glow: 'rgba(140,220,255,0.8)', spark: '#bdecff', effect: 'Chills & slows foes' },
-  storm: { id: 'storm', name: 'Stormcaller', icon: '⚡', blade: '#ffe066', edge: '#fff6c2', glow: 'rgba(255,225,90,0.85)', spark: '#fff1a8', effect: '+range & attack speed' },
+  steel: { id: 'steel', name: '精钢长剑', icon: '⚔️', blade: '#c2ccd8', edge: '#f2f6fb', glow: 'rgba(180,210,240,0.5)', spark: '#e9f2ff', effect: '暴击率 +8%' },
+  ember: { id: 'ember', name: '烬焰之刃', icon: '🔥', blade: '#ff6a2b', edge: '#ffd08a', glow: 'rgba(255,120,40,0.8)', spark: '#ffb347', effect: '伤害 +12%，攻击附带灼烧' },
+  stone: { id: 'stone', name: '裂石斩', icon: '🪨', blade: '#8b8577', edge: '#d8d2c4', glow: 'rgba(180,140,90,0.5)', spark: '#c9a066', effect: '强力击退' },
+  frost: { id: 'frost', name: '霜咬之锋', icon: '❄️', blade: '#7fd3f2', edge: '#e6faff', glow: 'rgba(140,220,255,0.8)', spark: '#bdecff', effect: '冰缓并减速敌人' },
+  storm: { id: 'storm', name: '唤雷者', icon: '⚡', blade: '#ffe066', edge: '#fff6c2', glow: 'rgba(255,225,90,0.85)', spark: '#fff1a8', effect: '攻击距离与速度提升' },
 }
 
 export function randomSwordStyle(): SwordStyleId {

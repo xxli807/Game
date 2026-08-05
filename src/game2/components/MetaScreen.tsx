@@ -23,34 +23,34 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
     <div className="menu-scroll ember-screen">
       <div className="menu">
         <div className="ember-mark">🔥</div>
-        <h1 className="title ember-title">The Last Ember</h1>
+        <h1 className="title ember-title">最后的余烬</h1>
         <p className="tagline ember-tagline">
-          Aldermere is hollow. You are the last of the Oathbound — and the {weaponNoun(classId)} you
-          carry still has your oldest friend inside it.
+          奥德米尔已被掏空。你是最后的誓约者——而你手中的{weaponNoun(classId)}里，
+          还封着你最老的朋友。
         </p>
 
         <div className="ember-purse">
-          🔥 <b>{meta.embers}</b> embers
-          {lastEarned > 0 && <span className="ember-gain"> +{lastEarned} from your last descent</span>}
+          🔥 余烬 <b>{meta.embers}</b>
+          {lastEarned > 0 && <span className="ember-gain"> 上次下潜 +{lastEarned}</span>}
         </div>
 
         <div className="ember-story">
           <div className="ember-chapter">
-            {meta.victories > 0 ? 'EPILOGUE' : `CHAPTER ${Math.min(deepest + 1, LAYERS.length)}`}
+            {meta.victories > 0 ? '终章' : `第 ${Math.min(deepest + 1, LAYERS.length)} 章`}
           </div>
           <p className="ember-recap">{chapterRecap(deepest, meta.victories)}</p>
           <p className="ember-cael">
             “{firstRun
-              ? 'Up you get. We swore this oath together, remember? Down we go.'
+              ? '起来。这誓言是我们一起立下的，记得吗？下去吧。'
               : meta.victories > 0
-                ? 'We took it back. Doesn’t feel real yet, does it? ...Again?'
-                : 'Back on your feet. The Depths haven’t beaten us yet.'}”
-            <span className="ember-cael-tag">— Cael</span>
+                ? '我们夺回来了。还没什么真实感，对吧？……再来一次？'
+                : '重新站起来。深渊还没打倒我们。'}”
+            <span className="ember-cael-tag">—— 凯尔</span>
           </p>
         </div>
 
         {/* The descent: four layers, each ending with a champion you knew */}
-        <h2 className="forge-title">🕯️ The Descent</h2>
+        <h2 className="forge-title">🕯️ 下潜之路</h2>
         <div className="descent-list">
           {LAYERS.map((layer) => {
             const reached = deepest >= layer.index
@@ -60,10 +60,10 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
                 <div className="descent-numeral">{layer.numeral}</div>
                 <div className="descent-body">
                   <div className="descent-name">
-                    {reached ? layer.name : `Depth ${layer.numeral} — not yet walked`}
+                    {reached ? layer.name : `第${layer.numeral}层 —— 尚未踏足`}
                   </div>
                   <div className="descent-lord">
-                    {rested ? `✓ ${layer.lord} — at rest` : reached ? layer.lord : layer.teaser}
+                    {rested ? `✓ ${layer.lord} —— 已安息` : reached ? layer.lord : layer.teaser}
                   </div>
                 </div>
                 <div className="descent-relic" title={layer.relic.name}>
@@ -76,14 +76,14 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
 
         <div className="sword-panel">
           <div className="sword-meta">
-            <div className="sword-lvl">{selectedClass.icon} Take up the oath as {selectedClass.name}</div>
+            <div className="sword-lvl">{selectedClass.icon} 以{selectedClass.name}的身份立誓</div>
             <div className="sword-stats">
               {firstRun
-                ? `${FINAL_STAGE} stages down. Four layers. One throne to take back.`
-                : `Deepest: ${deepest > 0 ? LAYERS[deepest - 1].name : 'the surface'} · stage ${meta.bestStage}/${FINAL_STAGE} · ${meta.totalKills} of the Hollow put down · ${meta.runs} descents${meta.victories > 0 ? ` · 👑 ${meta.victories} won` : ''}`}
+                ? `${FINAL_STAGE} 关，四层深渊，一座待夺回的王座。`
+                : `最深：${deepest > 0 ? LAYERS[deepest - 1].name : '地表'} · 第 ${meta.bestStage}/${FINAL_STAGE} 关 · 击败 ${meta.totalKills} 个空蚀之物 · 下潜 ${meta.runs} 次${meta.victories > 0 ? ` · 👑 通关 ${meta.victories} 次` : ''}`}
             </div>
           </div>
-          <div className="class-picker" aria-label="Choose a class">
+          <div className="class-picker" aria-label="选择职业">
             {(Object.keys(CLASSES) as ClassId[]).map((id) => (
               <button
                 key={id}
@@ -95,14 +95,13 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
               </button>
             ))}
           </div>
-          <button className="play-btn descend-btn" onClick={onStart}>▼ Descend</button>
+          <button className="play-btn descend-btn" onClick={onStart}>▼ 下潜</button>
         </div>
 
         {/* Rekindling Aldermere: permanent upgrades bought with embers */}
-        <h2 className="forge-title">🔨 Rekindle Aldermere</h2>
+        <h2 className="forge-title">🔨 重燃奥德米尔</h2>
         <p className="forge-note">
-          Embers come back with you from every descent — won or lost. Spend them here;
-          these gains are permanent.
+          无论输赢，每次下潜都会带回余烬。在这里消费它们；这些提升是永久的。
         </p>
         <div className="upgrade-grid">
           {META_UPGRADES.map((u) => {
@@ -123,7 +122,7 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
                   <span className="upgrade-lvl">{level}/{u.maxLevel}</span>
                 </div>
                 <small>{u.desc}</small>
-                <div className="upgrade-cost">{maxed ? 'Maxed' : `🔥 ${cost}`}</div>
+                <div className="upgrade-cost">{maxed ? '已满级' : `🔥 ${cost}`}</div>
               </button>
             )
           })}
@@ -131,14 +130,14 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
 
         {/* Sound check — click any sound to hear it in isolation. */}
         <details className="sound-check">
-          <summary>🔊 Sound check</summary>
+          <summary>🔊 音效试听</summary>
           <div className="sound-grid">
             {([
-              ['hit', 'Sword hit'], ['crit', 'Critical'], ['kill', 'Kill'],
-              ['gem', 'Gem'], ['pickup', 'Pickup'], ['stage', 'Stage clear'],
-              ['cast', 'Cast skill'], ['hurt', 'Take damage'], ['lordWarn', 'Lord wind-up'],
-              ['lordHit', 'Lord impact'], ['relic', 'Relic'], ['victory', 'Victory'],
-              ['death', 'Death'], ['ui', 'UI click'],
+              ['hit', '普通命中'], ['crit', '暴击'], ['kill', '击杀'],
+              ['gem', '经验宝石'], ['pickup', '拾取道具'], ['stage', '通关'],
+              ['cast', '释放技能'], ['hurt', '受伤'], ['lordWarn', '层主蓄力'],
+              ['lordHit', '层主重击'], ['relic', '获得遗物'], ['victory', '胜利'],
+              ['death', '死亡'], ['ui', '界面点击'],
             ] as [Sfx, string][]).map(([id, label]) => (
               <button key={id} className="sound-btn" onClick={() => { audio.resume(); audio.play(id) }}>
                 {label}
@@ -148,17 +147,17 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
         </details>
 
         <div className="how-to">
-          <h3>How to play</h3>
+          <h3>玩法说明</h3>
           <ul>
-            <li><b>Move</b> with <b>WASD</b> or <b>arrow</b> keys — on a phone, <b>drag anywhere</b>.</li>
-            <li>Your weapon <b>attacks by itself</b> — steer into the Hollow and it does the rest.</li>
-            <li>The Hollow <b>never stops coming</b> — each stage is a <b>kill quota</b>. Fill it to press deeper.</li>
-            <li>Every <b>{STAGES_PER_LAYER} stages</b> a <b>layer-lord</b> waits — a champion Cael knew.</li>
-            <li>After each stage, <b>pick one of three skills</b> (five slots; some combine into evolutions).</li>
-            <li>Each layer-lord yields a <b>relic of Aldermere</b> — a powerful boon found nowhere else.</li>
-            <li><b>Elites</b> and <b>bosses</b> drop <b>🎁 caches</b>: a free extra skill pick, mid-fight.</li>
-            <li>Reach <b>stage {FINAL_STAGE}</b> and beat the <b>Hollow King</b> to reclaim the kingdom.</li>
-            <li>Active skills use <b>Q</b>, <b>E</b>, <b>Space</b>, <b>R</b>, <b>F</b>. <b>Pause</b> with <b>P</b>.</li>
+            <li>用 <b>WASD</b> 或<b>方向键</b>移动——手机上<b>任意位置拖动</b>即可。</li>
+            <li>武器会<b>自动攻击</b>——只管靠近空蚀之物，其余交给它。</li>
+            <li>空蚀<b>源源不断</b>——每关都是一个<b>击杀指标</b>，达成即可深入。</li>
+            <li>每 <b>{STAGES_PER_LAYER}</b> 关会遇到一位<b>层主</b>——凯尔认识的勇士。</li>
+            <li>每关结束后<b>三选一</b>选技能（共五个槽位，部分可组合进化）。</li>
+            <li>击败层主必得一件<b>奥德米尔遗物</b>——别处无法获得的强力增益。</li>
+            <li>拾取地面道具：<b>❤️ 生命、🧲 磁石、💣 炸弹、⏱️ 冻结</b>，以及可<b>免费额外选一项技能</b>的 <b>🎁 宝箱</b>。</li>
+            <li>抵达第 <b>{FINAL_STAGE}</b> 关击败<b>空蚀之王</b>，夺回王国。</li>
+            <li>主动技能对应 <b>Q</b>、<b>E</b>、<b>空格</b>、<b>R</b>、<b>F</b>。按 <b>P</b> 暂停。</li>
           </ul>
         </div>
       </div>

@@ -7,6 +7,8 @@ import {
   SkillId,
 } from '../game/types'
 
+const RARITY_ZH: Record<string, string> = { common: '普通', rare: '稀有', epic: '史诗' }
+
 interface Props {
   cards: DraftChoice[]
   skills: OwnedSkill[]
@@ -29,10 +31,10 @@ export default function LevelUpModal({ cards, skills, clearedStage, bonus, onPic
   return (
     <div className="overlay">
       <div className="levelup">
-        <h2>{bonus ? '🎁 CACHE OF ALDERMERE' : `✓ STAGE ${clearedStage} CLEARED!`}</h2>
-        <p className="levelup-sub">{bonus ? 'A free pick — the fight is still on' : 'Choose a skill before the next stage'}</p>
+        <h2>{bonus ? '🎁 奥德米尔宝箱' : `✓ 第 ${clearedStage} 关完成！`}</h2>
+        <p className="levelup-sub">{bonus ? '免费选一项——战斗仍在继续' : '进入下一关前选择一项技能'}</p>
         <div className="levelup-loadout">
-          <span className="levelup-loadout-label">Current skills</span>
+          <span className="levelup-loadout-label">当前技能</span>
           <div className="levelup-skills">
             {skills.map((skill) => {
               const definition = SKILLS[skill.id]
@@ -50,7 +52,7 @@ export default function LevelUpModal({ cards, skills, clearedStage, bonus, onPic
             })}
             {Array.from({ length: Math.max(0, 5 - skills.length) }, (_, index) => (
               <div key={`empty-${index}`} className="levelup-skill levelup-skill-empty">
-                Empty slot
+                空槽位
               </div>
             ))}
           </div>
@@ -68,11 +70,11 @@ export default function LevelUpModal({ cards, skills, clearedStage, bonus, onPic
                 {c.tag && <div className="card-tag">{c.tag}</div>}
                 <div className="card-icon">{c.icon}</div>
                 <div className="card-name">{c.name}</div>
-                <div className="card-rarity">{c.rarity}</div>
+                <div className="card-rarity">{RARITY_ZH[c.rarity] ?? c.rarity}</div>
                 <div className="card-desc">{c.desc}</div>
                 {synergies.map(({ ownedIds, resultId }) => (
                   <div className="card-synergy-note" key={resultId}>
-                    <span className="card-synergy-label">✨ SYNERGY</span>
+                    <span className="card-synergy-label">✨ 组合</span>
                     <span>
                       + {ownedIds.map((id) => `${SKILLS[id].icon} ${SKILLS[id].name}`).join(' + ')}
                       {' → '}

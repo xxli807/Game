@@ -546,7 +546,7 @@ export class GameEngine {
       this.opts.onStory({ id: `layer-${layer.index}`, numeral: layer.numeral, title: layer.name, lines: layer.enter })
     }
     if (isLordStage(stage)) {
-      this.opts.onStory({ id: `lord-${stage}`, title: layer.lord, subtitle: 'LAYER-LORD', lines: layer.lordIntro })
+      this.opts.onStory({ id: `lord-${stage}`, title: layer.lord, subtitle: '层主', lines: layer.lordIntro })
     }
   }
 
@@ -644,10 +644,10 @@ export class GameEngine {
     this.status = 'playing'
     this.lastTs = performance.now()
     if (isLordStage(stage)) {
-      this.floatText(this.hero.x, this.hero.y - 70, `⚠ BOSS STAGE ${stage}!`, '#ff6b6b', 30)
+      this.floatText(this.hero.x, this.hero.y - 70, `⚠ 层主关卡 ${stage}！`, '#ff6b6b', 30)
       this.shake(14)
     } else {
-      this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${stage}`, '#ffd43b', 28)
+      this.floatText(this.hero.x, this.hero.y - 60, `第 ${stage} 关`, '#ffd43b', 28)
     }
     this.enterStage(stage)
   }
@@ -661,14 +661,14 @@ export class GameEngine {
     // the horde is continuous; the stage counter is just how you measure it.
     this.projectiles = this.projectiles.filter((projectile) => projectile.friendly)
     this.hero.hp = Math.min(this.stats.maxHp, this.hero.hp + this.stats.maxHp * 0.12)
-    this.floatText(this.hero.x, this.hero.y - 60, `STAGE ${this.stage} CLEARED!`, '#69db7c', 30)
+    this.floatText(this.hero.x, this.hero.y - 60, `第 ${this.stage} 关完成！`, '#69db7c', 30)
     audio.play('stage')
     // A layer-lord just fell: Cael says goodbye to someone he knew.
     if (isLordStage(this.stage)) {
       const layer = layerForStage(this.stage)
       this.opts.onStory({
         id: `lord-down-${this.stage}`,
-        title: `${layer.lord} — at rest`,
+        title: `${layer.lord} —— 已安息`,
         lines: LORD_DOWN[layer.index - 1] ?? [],
       })
     }
@@ -680,7 +680,7 @@ export class GameEngine {
   private win() {
     this.status = 'victory'
     this.enemies = []
-    this.floatText(this.hero.x, this.hero.y - 60, '👑 ALDERMERE RECLAIMED', '#ffd43b', 34)
+    this.floatText(this.hero.x, this.hero.y - 60, '👑 奥德米尔已夺回', '#ffd43b', 34)
     audio.play('victory')
     this.opts.onStageCleared(this.stage)
     this.opts.onRunEnd({ clearedStage: this.stage, kills: this.kills })
@@ -972,7 +972,7 @@ export class GameEngine {
       }
     }
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: radius, life: 0.4, color: 'rgba(210,170,110,0.75)' })
-    this.floatText(h.x, h.y - 45, 'SEISMIC LEAP', '#ffd08a', 22)
+    this.floatText(h.x, h.y - 45, '震地跃击', '#ffd08a', 22)
     this.shake(9)
   }
 
@@ -994,7 +994,7 @@ export class GameEngine {
     h.shieldT = Math.max(h.shieldT, this.stats.shieldTime + lvl * 0.25 + affected * 0.18)
     h.invuln = Math.max(h.invuln, 0.35)
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: this.stats.ultRadius, life: 0.45, color: 'rgba(255,185,90,0.7)' })
-    this.floatText(h.x, h.y - 45, `CHALLENGING ROAR · ${affected}`, '#ffb45f', 22)
+    this.floatText(h.x, h.y - 45, `挑衅怒吼 · ${affected}`, '#ffb45f', 22)
     this.shake(8)
   }
 
@@ -1009,7 +1009,7 @@ export class GameEngine {
     h.counterT = 2.2 + lvl * 0.25
     h.invuln = Math.max(h.invuln, 0.15)
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 70, life: 0.35, color: 'rgba(210,55,65,0.7)' })
-    this.floatText(h.x, h.y - 34, 'BLOOD REPRISAL', '#ff6b6b', 22)
+    this.floatText(h.x, h.y - 34, '血之反击', '#ff6b6b', 22)
   }
 
   // ---------- skill system ----------
@@ -1168,7 +1168,7 @@ export class GameEngine {
       }
     }
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 170, life: 0.55, color: 'rgba(255,205,90,0.7)' })
-    this.floatText(h.x, h.y - 44, 'BLADESTORM CHARGE', '#ffd866', 24)
+    this.floatText(h.x, h.y - 44, '剑刃风暴冲锋', '#ffd866', 24)
     this.shake(10)
   }
 
@@ -1189,7 +1189,7 @@ export class GameEngine {
       }
     }
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: R, life: 0.4, color: 'rgba(255,220,120,0.6)' })
-    this.floatText(h.x, h.y - 44, 'LIVING BATTERING RAM', '#ffd866', 22)
+    this.floatText(h.x, h.y - 44, '活体撞城槌', '#ffd866', 22)
     this.shake(8)
   }
 
@@ -1208,7 +1208,7 @@ export class GameEngine {
       }
     }
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: radius, life: 0.55, color: 'rgba(185,35,45,0.7)' })
-    this.floatText(h.x, h.y - 44, 'CRIMSON EARTHSHATTER', '#ff6b6b', 22)
+    this.floatText(h.x, h.y - 44, '赤红裂地', '#ff6b6b', 22)
     this.shake(12)
   }
 
@@ -1220,7 +1220,7 @@ export class GameEngine {
     h.lastStandT = 5 + lvl
     h.invuln = Math.max(h.invuln, 0.4)
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 230, life: 0.6, color: 'rgba(255,180,90,0.65)' })
-    this.floatText(h.x, h.y - 44, 'LAST STAND', '#ffc078', 26)
+    this.floatText(h.x, h.y - 44, '背水一战', '#ffc078', 26)
     this.shake(12)
   }
 
@@ -1230,7 +1230,7 @@ export class GameEngine {
     h.counterT = 4 + lvl * 0.5
     h.furyT = h.counterT
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 130, life: 0.5, color: 'rgba(230,55,55,0.7)' })
-    this.floatText(h.x, h.y - 44, "BERSERKER'S RECKONING", '#ff6b6b', 22)
+    this.floatText(h.x, h.y - 44, "狂战士的清算", '#ff6b6b', 22)
     this.shake(10)
   }
 
@@ -1256,7 +1256,7 @@ export class GameEngine {
       }
     }
     this.rings.push({ x: h.x, y: h.y, r: 10, maxR: 170, life: 0.5, color: 'rgba(255,210,105,0.75)' })
-    this.floatText(h.x, h.y - 48, 'TITANBREAKER', '#ffe066', 28)
+    this.floatText(h.x, h.y - 48, '泰坦终结者', '#ffe066', 28)
     this.shake(16)
   }
 
@@ -1296,20 +1296,20 @@ export class GameEngine {
     this.projectiles.push(this.mkProj(this.hero.x, this.hero.y - 8, d.x * 430, d.y * 430, 75 + lvl * 22, true, {
       r: 16, radius: 120 + lvl * 8, color: '#ff4d21',
     }))
-    this.floatText(this.hero.x, this.hero.y - 42, 'PYROCLASM', '#ff7b32', 24)
+    this.floatText(this.hero.x, this.hero.y - 42, '炽焰浩劫', '#ff7b32', 24)
   }
 
   private castMageFrozenTempest(lvl: number) {
     if (!this.beginActive('mage-frozen-tempest')) return
     this.frostBurst(260, 55 + lvl * 16)
     for (const e of this.enemies) if (Math.hypot(e.x - this.hero.x, e.y - this.hero.y) < 260 + e.radius) e.slowT = 4 + lvl * 0.4
-    this.floatText(this.hero.x, this.hero.y - 42, 'FROZEN TEMPEST', '#a5e5ff', 22)
+    this.floatText(this.hero.x, this.hero.y - 42, '冰封暴雪', '#a5e5ff', 22)
   }
 
   private castMageArcaneBarrage(lvl: number) {
     if (!this.beginActive('mage-arcane-barrage')) return
     this.arcaneVolley(7 + lvl, 28 + lvl * 9)
-    this.floatText(this.hero.x, this.hero.y - 42, 'ARCANE BARRAGE', '#d0a6ff', 22)
+    this.floatText(this.hero.x, this.hero.y - 42, '奥术弹幕', '#d0a6ff', 22)
   }
 
   private castMagePrismaticStep(lvl: number) {
@@ -1325,7 +1325,7 @@ export class GameEngine {
     if (!this.beginActive('mage-glacial-aegis')) return
     this.hero.shieldT = Math.max(this.hero.shieldT, 5 + lvl * 0.6)
     this.frostBurst(190, 34 + lvl * 10)
-    this.floatText(this.hero.x, this.hero.y - 42, 'GLACIAL AEGIS', '#a5e5ff', 22)
+    this.floatText(this.hero.x, this.hero.y - 42, '冰川守护', '#a5e5ff', 22)
   }
 
   private castMageElementalConvergence(lvl: number) {
@@ -1340,7 +1340,7 @@ export class GameEngine {
     }
     this.arcaneVolley(5 + lvl, 24 + lvl * 8)
     this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: radius, life: 0.7, color: 'rgba(180,110,255,0.75)' })
-    this.floatText(this.hero.x, this.hero.y - 48, 'ELEMENTAL CONVERGENCE', '#f0c6ff', 24)
+    this.floatText(this.hero.x, this.hero.y - 48, '元素归一', '#f0c6ff', 24)
     this.shake(16)
   }
 
@@ -1380,7 +1380,7 @@ export class GameEngine {
     if (!this.beginActive('necro-raise-skeleton')) return
     const count = lvl >= 4 ? 2 : 1
     for (let i = 0; i < count; i++) this.raiseSkeleton(lvl)
-    this.floatText(this.hero.x, this.hero.y - 42, 'RISE!', '#8ce99a', 22)
+    this.floatText(this.hero.x, this.hero.y - 42, '起来吧！', '#8ce99a', 22)
   }
 
   private castBoneSpear(lvl: number) {
@@ -1391,7 +1391,7 @@ export class GameEngine {
   private castCorpseBurst(lvl: number) {
     const corpse = this.nearestCorpse()
     if (!corpse) {
-      this.floatText(this.hero.x, this.hero.y - 38, 'NO CORPSE', '#adb5bd', 16)
+      this.floatText(this.hero.x, this.hero.y - 38, '没有尸体', '#adb5bd', 16)
       return
     }
     if (!this.beginActive('necro-corpse-burst')) return
@@ -1412,25 +1412,25 @@ export class GameEngine {
       }
     }
     this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: radius, life: 0.55, color: 'rgba(105,190,115,0.7)' })
-    this.floatText(this.hero.x, this.hero.y - 42, 'DECREPIFY', '#8ce99a', 20)
+    this.floatText(this.hero.x, this.hero.y - 42, '衰朽诅咒', '#8ce99a', 20)
   }
 
   private castSkeletonLegion(lvl: number) {
     if (!this.beginActive('necro-skeleton-legion')) return
     for (let i = 0; i < 4; i++) this.raiseSkeleton(lvl + 2, true)
-    this.floatText(this.hero.x, this.hero.y - 48, 'SKELETON LEGION', '#b2f2bb', 23)
+    this.floatText(this.hero.x, this.hero.y - 48, '骷髅军团', '#b2f2bb', 23)
   }
 
   private castOssuaryLance(lvl: number) {
     if (!this.beginActive('necro-ossuary-lance')) return
     this.fireBoneSpear(88 + lvl * 24, 20)
     this.hero.shieldT = Math.max(this.hero.shieldT, 2.5 + lvl * 0.4)
-    this.floatText(this.hero.x, this.hero.y - 44, 'OSSUARY LANCE', '#e9ecef', 22)
+    this.floatText(this.hero.x, this.hero.y - 44, '骸骨长枪', '#e9ecef', 22)
   }
 
   private castCorpseCathedral(lvl: number) {
     if (this.corpses.length === 0) {
-      this.floatText(this.hero.x, this.hero.y - 38, 'NO CORPSES', '#adb5bd', 16)
+      this.floatText(this.hero.x, this.hero.y - 38, '没有尸体', '#adb5bd', 16)
       return
     }
     if (!this.beginActive('necro-corpse-cathedral')) return
@@ -1438,21 +1438,21 @@ export class GameEngine {
       .filter((corpse) => Math.hypot(corpse.x - this.hero.x, corpse.y - this.hero.y) < 650)
       .slice(0, 12)
     for (const corpse of corpses) this.detonateCorpse(corpse, 58 + lvl * 18, 135)
-    this.floatText(this.hero.x, this.hero.y - 48, 'CORPSE CATHEDRAL', '#69db7c', 22)
+    this.floatText(this.hero.x, this.hero.y - 48, '尸骸圣殿', '#69db7c', 22)
   }
 
   private castCrimsonCovenant(lvl: number) {
     if (!this.beginActive('necro-crimson-covenant')) return
     this.bloodNova(280, 72 + lvl * 21, 0.2)
     this.skeletonFrenzyT = Math.max(this.skeletonFrenzyT, 3 + lvl * 0.4)
-    this.floatText(this.hero.x, this.hero.y - 48, 'CRIMSON COVENANT', '#ff8787', 22)
+    this.floatText(this.hero.x, this.hero.y - 48, '猩红圣约', '#ff8787', 22)
   }
 
   private castWitheringArmy(lvl: number) {
     if (!this.beginActive('necro-withering-army')) return
     for (const e of this.enemies) e.slowT = Math.max(e.slowT, 5 + lvl * 0.5)
     this.skeletonFrenzyT = 6 + lvl * 0.7
-    this.floatText(this.hero.x, this.hero.y - 48, 'WITHERING ARMY', '#8ce99a', 22)
+    this.floatText(this.hero.x, this.hero.y - 48, '凋零之军', '#8ce99a', 22)
   }
 
   private castArmyOfTheDead(lvl: number) {
@@ -1462,7 +1462,7 @@ export class GameEngine {
     for (let i = 0; i < 6 + corpsePower; i++) this.raiseSkeleton(lvl + 3, true, 16)
     this.skeletonFrenzyT = 8
     this.rings.push({ x: this.hero.x, y: this.hero.y, r: 10, maxR: 340, life: 0.8, color: 'rgba(80,210,110,0.75)' })
-    this.floatText(this.hero.x, this.hero.y - 54, 'ARMY OF THE DEAD', '#b2f2bb', 26)
+    this.floatText(this.hero.x, this.hero.y - 54, '亡者大军', '#b2f2bb', 26)
     this.shake(14)
   }
 
@@ -1609,7 +1609,7 @@ export class GameEngine {
       e.castCd = 0.8
       this.shake(16)
       this.flash = 0.5
-      this.floatText(e.x, e.y - e.radius - 30, 'THE CROWN BURNS', '#ff6b3d', 26)
+      this.floatText(e.x, e.y - e.radius - 30, '王冠燃烧', '#ff6b3d', 26)
       // the King calls the Hollow to him
       for (let i = 0; i < 4; i++) this.spawnEnemy('fast')
     }
@@ -1637,11 +1637,11 @@ export class GameEngine {
     switch (e.lord) {
       case 1: // Roderin — shield slam around himself
         this.rings.push({ x: e.x, y: e.y, r: 8, maxR: 190, life: 0.75, color: warn })
-        this.floatText(e.x, e.y - e.radius - 20, 'SHIELD SLAM', '#ffd43b', 18)
+        this.floatText(e.x, e.y - e.radius - 20, '盾击', '#ffd43b', 18)
         break
       case 2: // Maren — root volley aimed at the hero
         this.rings.push({ x: e.x, y: e.y, r: 8, maxR: 110, life: 0.85, color: 'rgba(140,220,120,0.8)' })
-        this.floatText(e.x, e.y - e.radius - 20, 'ROOT VOLLEY', '#8ce99a', 18)
+        this.floatText(e.x, e.y - e.radius - 20, '根须齐射', '#8ce99a', 18)
         e.facing = Math.cos(aim) < 0 ? -1 : 1
         break
       case 3: { // Yll — three freezing sigils on the ground near the hero
@@ -1654,12 +1654,12 @@ export class GameEngine {
             t: 0.85, damage: e.damage * 0.9, radius: 78,
           })
         }
-        this.floatText(e.x, e.y - e.radius - 20, 'FROST SIGILS', '#8cd6ff', 18)
+        this.floatText(e.x, e.y - e.radius - 20, '霜印', '#8cd6ff', 18)
         break
       }
       default: // the Hollow King — slam, and in phase 2 a rain of fire
         this.rings.push({ x: e.x, y: e.y, r: 8, maxR: 230, life: 0.85, color: warn })
-        this.floatText(e.x, e.y - e.radius - 24, e.phase2 ? 'HEART OF FIRE' : 'CROWN SLAM', '#ff922b', 20)
+        this.floatText(e.x, e.y - e.radius - 24, e.phase2 ? '烈焰之心' : '王冠重击', '#ff922b', 20)
         if (e.phase2) {
           const h = this.hero
           for (let i = 0; i < 5; i++) {
@@ -1737,7 +1737,7 @@ export class GameEngine {
         this.opts.onStory({
           id: `relic-${layer.relic.key}`,
           title: layer.relic.name,
-          subtitle: 'RELIC OF ALDERMERE',
+          subtitle: '奥德米尔遗物',
           lines: [layer.relicTaken, layer.relic.desc],
         })
       }
@@ -1749,7 +1749,7 @@ export class GameEngine {
       const ramRefund = this.owned('blade-dancer') && this.hero.dashT > 0 ? 5 : 0
       const gainedRage = Math.round(baseRage * (1 + furyLevel * 0.15) + bleedBonus + ramRefund)
       this.hero.rage = Math.min(this.stats.maxRage, this.hero.rage + gainedRage)
-      this.floatText(e.x, e.y - e.radius - 14, `+${gainedRage} RAGE`, '#ff922b', 14)
+      this.floatText(e.x, e.y - e.radius - 14, `+${gainedRage} 怒气`, '#ff922b', 14)
     } else if (this.classId === 'necromancer') {
       const harvest = this.owned('necro-grim-harvest')?.level ?? 0
       const baseEssence = e.kind === 'boss' ? 30 : e.elite ? 16 : 7
@@ -1764,7 +1764,7 @@ export class GameEngine {
       this.eliteKills++
       this.floatText(e.x, e.y - 10, '★ SPECIAL ★', '#ffd43b', 20)
     }
-    if (e.kind === 'boss') this.floatText(e.x, e.y, 'BOSS DOWN!', '#ff6b6b', 24)
+    if (e.kind === 'boss') this.floatText(e.x, e.y, '首领倒下！', '#ff6b6b', 24)
     const burst = e.kind === 'boss' ? 26 : e.elite ? 12 : 4
     const col = BIOMES[this.biome].accent
     for (let i = 0; i < burst; i++) {
@@ -1833,7 +1833,7 @@ export class GameEngine {
     switch (type) {
       case 'heart':
         h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.3)
-        this.floatText(h.x, h.y - 30, '+HP', '#69db7c', 22)
+        this.floatText(h.x, h.y - 30, '+生命', '#69db7c', 22)
         break
       case 'gold': {
         // a hot streak pays better — the combo is worth chasing, not just pretty
@@ -1848,7 +1848,7 @@ export class GameEngine {
           pickup.x += (h.x - pickup.x) * 0.8
           pickup.y += (h.y - pickup.y) * 0.8
         }
-        this.floatText(h.x, h.y - 30, 'LOOT PULLED!', '#8cf5ff', 24)
+        this.floatText(h.x, h.y - 30, '战利品吸引！', '#8cf5ff', 24)
         break
       case 'bomb':
         this.flash = 1
@@ -1856,18 +1856,18 @@ export class GameEngine {
         for (const e of this.enemies) {
           if (this.inView(e.x, e.y, 80)) this.damageEnemy(e, 9999, true)
         }
-        this.floatText(h.x, h.y - 30, '💥 BOOM!', '#ff922b', 28)
+        this.floatText(h.x, h.y - 30, '💥 轰！', '#ff922b', 28)
         break
       case 'clock':
         this.freezeT = 3.5
-        this.floatText(h.x, h.y - 30, '⏱ FREEZE!', '#a5d8ff', 26)
+        this.floatText(h.x, h.y - 30, '⏱ 冻结！', '#a5d8ff', 26)
         break
       case 'chest': {
         // a cache of Aldermere: a free skill pick, the real prize
         this.openBonusDraft()
         this.gold += 25
         h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.35)
-        this.floatText(h.x, h.y - 36, '🎁 TREASURE!', '#ffd43b', 30)
+        this.floatText(h.x, h.y - 36, '🎁 宝箱！', '#ffd43b', 30)
         for (let i = 0; i < 24; i++) {
           const a = Math.random() * Math.PI * 2
           const sp = 80 + Math.random() * 160
@@ -1936,7 +1936,7 @@ export class GameEngine {
         weight: 9, // strongly surface evolutions
         choice: {
           id: `syn-${syn.result}`, name: def.name, icon: def.icon,
-          desc: def.description, rarity: def.rarity, tag: '✨ EVOLVE',
+          desc: def.description, rarity: def.rarity, tag: '✨ 进化',
         },
         apply: () => {
           this.skills = this.skills.filter((os) => !syn.ingredients.includes(os.id))
@@ -1954,7 +1954,7 @@ export class GameEngine {
         weight: this.rarityWeight(def.rarity) + 1.5,
         choice: {
           id: `up-${os.id}`, name: def.name, icon: def.icon,
-          desc: def.description, rarity: def.rarity, tag: `Lv ${os.level} → ${os.level + 1}`,
+          desc: def.description, rarity: def.rarity, tag: `等级 ${os.level} → ${os.level + 1}`,
         },
         apply: () => { os.level++; if (def.kind === 'passive') this.recomputeStats() },
       })
@@ -1970,7 +1970,7 @@ export class GameEngine {
           choice: {
             id: `new-${id}`, name: def.name, icon: def.icon,
             desc: def.description, rarity: def.rarity,
-            tag: def.kind === 'active' ? '★ NEW SKILL' : '★ NEW PASSIVE',
+            tag: def.kind === 'active' ? '★ 新技能' : '★ 新被动',
           },
           apply: () => { this.skills.push({ id, level: 1 }); if (def.kind === 'passive') this.recomputeStats() },
         })
@@ -1983,7 +1983,7 @@ export class GameEngine {
     if (opts.length === 0) {
       opts.push({
         weight: 1,
-        choice: { id: 'fallback-heal', name: 'Second Wind', icon: '💗', desc: 'Fully restore health.', rarity: 'common' },
+        choice: { id: 'fallback-heal', name: '重振旗鼓', icon: '💗', desc: '完全回复生命。', rarity: 'common' },
         apply: () => { this.hero.hp = this.stats.maxHp },
       })
     }
@@ -2665,7 +2665,7 @@ export class GameEngine {
       h.willCd = 5
       const restored = 4 + manaShield * 3
       h.rage = Math.min(this.stats.maxRage, h.rage + restored)
-      this.floatText(h.x, h.y - 42, `+${restored} MANA`, '#74c0fc', 16)
+      this.floatText(h.x, h.y - 42, `+${restored} 法力`, '#74c0fc', 16)
     }
     h.hp -= dmg
     audio.play('hurt')
@@ -2689,7 +2689,7 @@ export class GameEngine {
       h.hp = 1
       h.lastStandT = 0
       h.shieldT = 1.2
-      this.floatText(h.x, h.y - 52, 'NOT YET!', '#ffe066', 24)
+      this.floatText(h.x, h.y - 52, '还没完！', '#ffe066', 24)
     }
     h.invuln = 0.2
     this.floatText(this.hero.x, this.hero.y - 26, `-${Math.round(dmg)}`, '#ff8787', 18)
@@ -3597,6 +3597,7 @@ export class GameEngine {
       maxHp: Math.round(s.maxHp),
       rage: Math.round(h.rage),
       maxRage: Math.round(s.maxRage),
+      classId: this.classId,
       className: CLASSES[this.classId].name,
       resourceName: CLASSES[this.classId].resourceName,
       minionCount: this.skeletons.length,

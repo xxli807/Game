@@ -1,8 +1,10 @@
 import { HudState, SKILLS } from '../game/types'
 
 export default function HUD({ state, onAbility }: { state: HudState; onAbility: (key: string) => void }) {
-  const stagePct = (state.stageKills / state.stageEnemyTotal) * 100
-  const remaining = Math.max(0, state.stageEnemyTotal - state.stageKills)
+  // AoE can kill several at once, so clamp the display to the quota
+  const shownKills = Math.min(state.stageKills, state.stageEnemyTotal)
+  const stagePct = (shownKills / state.stageEnemyTotal) * 100
+  const remaining = Math.max(0, state.stageEnemyTotal - shownKills)
 
   const mm = Math.floor(state.time / 60)
   const ss = Math.floor(state.time % 60)
@@ -13,7 +15,7 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
       <div className={`stage-strip${state.bossStage ? ' stage-strip-boss' : ''}`}>
         <div className="stage-strip-fill" style={{ width: `${Math.max(0, Math.min(100, stagePct))}%` }} />
         <span className="stage-strip-label">
-          {state.bossStage ? '☠ LAYER-LORD · ' : ''}STAGE {state.stage}/{state.finalStage} · {state.stageKills}/{state.stageEnemyTotal}
+          {state.bossStage ? '☠ 层主 · ' : ''}第 {state.stage}/{state.finalStage} 关 · {shownKills}/{state.stageEnemyTotal}
         </span>
       </div>
 
@@ -34,7 +36,7 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
           {state.skills.map((skill) => {
             const definition = SKILLS[skill.id]
             return (
-            <div key={skill.id} className="weapon-chip" title={`${definition.name} · Level ${skill.level}`}>
+            <div key={skill.id} className="weapon-chip" title={`${definition.name} · 等级 ${skill.level}`}>
               <span className="weapon-icon">{definition.icon}</span>
               <span className="weapon-lvl">{skill.level}</span>
             </div>
@@ -46,19 +48,19 @@ export default function HUD({ state, onAbility }: { state: HudState; onAbility: 
       {/* top-right run info */}
       <div className="hud-info">
         <div className="chip">⚔️ {state.className}</div>
-        <div className="chip">👹 {remaining} remaining</div>
-        <div className="chip chip-depth" title="How deep into the Depths you are">
-          🕯️ Depth {state.depth}/{state.maxDepth} · {state.biome}
+        <div className="chip">👹 剩余 {remaining}</div>
+        <div className="chip chip-depth" title="你已下潜到第几层">
+          🕯️ 第 {state.depth}/{state.maxDepth} 层 · {state.biome}
         </div>
         <div className="chip">💀 {state.kills}</div>
-        {state.className === 'Necromancer' && <div className="chip">☠️ {state.minionCount} summoned</div>}
+        {state.classId === 'necromancer' && <div className="chip">☠️ 已召唤 {state.minionCount}</div>}
         <div className="chip">🪙 {state.gold}</div>
         <div className="chip chip-sword">
-          {state.className === 'Mage'
-            ? `🪄 Arcane Focus · T${state.swordTier}`
-            : state.className === 'Necromancer'
-              ? `💀 Bone Focus · T${state.swordTier}`
-            : `${state.swordStyleIcon} ${state.swordStyleName} · T${state.swordTier}`}
+          {state.classId === 'mage'
+            ? `🪄 奥术法器 · ${state.swordTier} 阶`
+            : state.classId === 'necromancer'
+              ? `💀 骸骨法器 · ${state.swordTier} 阶`
+            : `${state.swordStyleIcon} ${state.swordStyleName} · ${state.swordTier} 阶`}
         </div>
       </div>
 

@@ -35,9 +35,9 @@ export default function Dialogue({ event, onDone }: { event: StoryEvent; onDone:
       )}
       {lines.length > 0 && (
         <div className="story-dialogue">
-          <div className="story-speaker">⚔️ CAEL</div>
+          <div className="story-speaker">⚔️ 凯尔</div>
           <div className="story-line">{lines[i]}</div>
-          <div className="story-hint">tap to continue ▸</div>
+          <div className="story-hint">点击继续 ▸</div>
         </div>
       )}
     </div>
