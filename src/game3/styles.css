@@ -9,7 +9,7 @@
 .challenge-screen h1 { max-width: 720px; } .challenge-options { width: min(760px, 100%); display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 24px; } .challenge-options .choice { min-height: 96px; }
 .topbar { max-width: 1180px; margin: 0 auto 22px; display: flex; align-items: end; justify-content: space-between; gap: 20px; } .topbar h1 { font-size: clamp(1.5rem, 4vw, 2.35rem); margin-bottom: 0; } .timer { display: none; }
 .dashboard, .game-grid { max-width: 1180px; margin-left: auto; margin-right: auto; } .dashboard { padding: 16px; margin-bottom: 22px; background: rgba(255,248,230,.55); border: 1px solid #c8a477; } .phase-track { display: flex; justify-content: space-between; gap: 5px; margin-bottom: 16px; } .phase { flex: 1; display: flex; align-items: center; gap: 6px; color: #ae9475; font-size: .78rem; } .phase span { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid #c8a477; border-radius: 50%; } .phase.active { color: #8e2e25; font-weight: 700; } .phase.active span { color: #fff5dd; background: #a52d26; border-color: #a52d26; }
-.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; } .stat { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: rgba(255,255,255,.32); } .stat > span { font-size: 1.25rem; } .stat strong { display: block; font-size: 1.05rem; } .stat small { color: #8b7256; font-size: .7rem; }
+.stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; } .stat { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: rgba(255,255,255,.32); } .stat > span { font-size: 1.25rem; } .stat strong { display: block; font-size: 1.05rem; } .stat small { color: #8b7256; font-size: .7rem; }
 .game-grid { display: grid; grid-template-columns: minmax(210px, .7fr) minmax(0, 1.65fr); gap: 24px; align-items: start; } .realm-panel, .chronicle { background: rgba(255,248,230,.66); border: 1px solid #c8a477; padding: 19px; } .realm-panel h2 { margin-bottom: 3px; font-size: 1.55rem; } .army-name { color: #a52d26; font-size: .85rem; margin-bottom: 18px; } .map-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; } .map-grid span { padding: 8px 4px; color: #a58b6d; border: 1px solid #d4bc99; text-align: center; font-size: .78rem; } .map-grid span.owned { color: #fff4df; background: #9b4a31; border-color: #9b4a31; }
 .roster { margin-top: 20px; padding-top: 15px; border-top: 1px solid #d4bc99; font-size: .82rem; } .roster p { color: #8b3d2e; margin: 8px 0 6px; font-weight: 700; } .roster span { display: inline-block; padding: 4px 7px; margin: 0 4px 4px 0; background: #dfc59d; font-size: .73rem; }
 .event-column { min-width: 0; } .event-meta { display: flex; justify-content: space-between; color: #997a58; font-size: .75rem; margin: 0 3px 9px; } .event-card { position: relative; padding: clamp(24px, 5vw, 44px); background: #fff5de; border: 1px solid #c8a477; box-shadow: 0 14px 28px rgba(99,58,27,.13); } .wax-seal { position: absolute; right: 23px; top: 23px; width: 39px; height: 39px; font-size: 1.2rem; transform: rotate(8deg); } .event-card h2 { max-width: 80%; margin-bottom: 14px; font-size: clamp(1.4rem, 3vw, 2rem); } .event-body { max-width: 720px; margin-bottom: 26px; color: #594331; line-height: 2; font-size: 1.02rem; } .choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; } .choice { display: flex; flex-direction: column; align-items: start; gap: 5px; min-height: 76px; padding: 15px; text-align: left; color: #3e281c; background: #f3dfb9; border: 1px solid #c09a6b; border-left: 4px solid #a52d26; transition: transform .15s, background .15s; } .choice:hover { transform: translateY(-2px); background: #f9e9c9; } .choice strong { font-size: .97rem; } .choice span { color: #856d52; font-size: .76rem; }
@@ -29,4 +29,44 @@
 .crisis-banner {
   margin-top: 10px; padding: 9px 14px; border-radius: 10px; font-size: 14px;
   color: #ffd7d0; background: rgba(150,40,30,.28); border: 1px solid rgba(255,120,90,.45);
+}
+
+/* 大厅：君王解锁名录 */
+.monarch-roster { width: min(680px, 100%); margin-top: 26px; }
+.monarch-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.monarch-pick {
+  padding: 11px 4px; font-size: .88rem; color: #4a3222;
+  background: #f3dfb9; border: 2px solid #c09a6b; border-radius: 2px;
+  transition: transform .12s, background .12s;
+}
+.monarch-pick:hover:not(:disabled) { transform: translateY(-2px); background: #fbeccd; }
+.monarch-pick.selected { color: #fff5dd; background: #8e2e25; border-color: #5e1d19; font-weight: 700; }
+.monarch-pick.locked { color: #b9a184; background: rgba(255,255,255,.28); border-color: #d9c5a4; border-style: dashed; cursor: not-allowed; }
+
+/* 资源条：军需提示与告警 */
+.stat-note { display: block; margin-top: 1px; color: #a5503c; font-style: normal; font-size: .66rem; }
+.stat-warn { background: rgba(165,45,38,.14); box-shadow: inset 0 0 0 1px rgba(165,45,38,.35); }
+.stat-warn strong { color: #a52d26; }
+
+/* 朝堂加成：让人才 / 军制 / 姻亲的作用看得见 */
+.boons { margin-top: 18px; padding-top: 14px; border-top: 1px solid #d4bc99; }
+.boons span { display: block; margin-bottom: 5px; padding: 5px 8px; color: #5b4430; background: rgba(223,197,157,.5); border-left: 3px solid #a52d26; font-size: .72rem; line-height: 1.5; }
+.boons small { color: #a58b6d; font-size: .72rem; }
+
+/* 倒计时：时限现在是真会输的机制，必须让玩家看得见 */
+.timer {
+  display: block; padding: 8px 14px; text-align: center; white-space: nowrap;
+  color: #6b4a1e; background: rgba(255,248,230,.72); border: 1px solid #c8a477;
+}
+.timer b { display: block; font-size: 1.35rem; letter-spacing: .04em; }
+.timer small { color: #a58b6d; font-size: .66rem; }
+.timer.urgent { color: #fff2e0; background: #a52d26; border-color: #7c2019; animation: pulse 1.2s infinite; }
+.timer.urgent small { color: #f6d3c4; }
+
+/* 通关解锁提示 */
+.unlock-note { margin: -8px 0 20px; padding: 9px 12px; color: #6b4a1e !important; background: rgba(214,168,74,.24); border: 1px dashed #b98a3c; font-size: .85rem; }
+
+@media (max-width: 760px) {
+  .stats { grid-template-columns: repeat(3, 1fr); }
+  .monarch-grid { grid-template-columns: repeat(4, 1fr); }
 }
