@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyPassive, applyActive, applyCourt, checkCrisis, challengeOdds, challengeSetback, resolveEnding, tick, upkeepFor, courtSummary, Resources, Court } from './rules'
+import { applyPassive, applyActive, applyCourt, checkCrisis, challengeOdds, challengeSetback, resolveEnding, tick, upkeepFor, courtSummary, DEATH_CHANCE, Resources, Court } from './rules'
 import { loadMeta, saveMeta, recordRun, recordVictory, nextLocked, DynastyMeta } from './meta'
+import { handwrittenEvents } from './events'
 
 const TIME_LIMIT = 480 // 21 次抉择约需 378 秒，留出约 100 秒容错：出错会逼近上限，但不至于必输
 
@@ -27,7 +28,6 @@ const MONARCHS: Monarch[] = [
   { name: '忽必烈', epithet: '元世祖', passive: '通商：银两与粮食交易更划算', active: '四海：外族盟约不降低威望', trait: '融合', color: '#5b6b43' },
 ]
 const CITIES = ['西安', '太原', '北京', '济南', '南京', '武昌', '成都', '杭州', '广州', '山海关']
-const TALENTS = ['李靖', '诸葛亮', '狄仁杰', '戚继光', '张居正', '郭子仪', '卫青', '班超', '范仲淹', '郑和']
 const SPOUSES = ['关中豪族之女', '江南商帮继承人', '辽东部族公主', '前朝宗室', '并肩作战的女将', '盐商之女']
 const ARMIES = ['农民军', '边军骑兵', '火器新军', '江南水师', '亲军精锐']
 const PHASES: Phase[] = ['蛰伏', '立足', '逐鹿', '问鼎', '建国']
@@ -52,11 +52,10 @@ const authoredEvents: GameEvent[] = [
   { id: 'palace', title: '夜半宫变', body: '亲军统领叩响寝门，说宫中有人要先下手为强。你必须在黑暗中做出判断。', source: '死生 · 行宫', phase: '建国', options: [{ label: '只带一名侍卫赴约', detail: '稳定 +20，但可能中道崩殂', effect: { stability: 20, death: true, city: '中道崩殂' } }, { label: '召集百官护驾', detail: '威望 +10，银两 -10', effect: { prestige: 10, silver: -10 } }] },
 ]
 
-const generatedEvents: GameEvent[] = Array.from({ length: 83 }, (_, index) => {
-  const talent = TALENTS[index % TALENTS.length]; const city = CITIES[index % CITIES.length]; const phase = PHASES[index % 4]; const positive = index % 2 === 0
-  return { id: `rumor-${index + 1}`, title: positive ? `乱世传闻 · ${index + 1}` : `烽烟急报 · ${index + 1}`, body: positive ? `${city}传来消息：一位不甘沉沦的能人正在等待新的旗帜。` : `敌军趁夜渡河，${city}的粮道和城门同时传来坏消息。`, source: `随机事件 · ${city}`, phase, options: positive ? [{ label: `招揽${talent}`, detail: '获得人才，威望 +4', effect: { talent, prestige: 4 } }, { label: `整顿${city}`, detail: '稳定 +12，银两 -6', effect: { stability: 12, silver: -6 } }] : [{ label: '调兵迎战', detail: '兵力 +12，粮草 -8', effect: { army: 12, grain: -8 } }, { label: '闭城待变', detail: '稳定 +8，威望 -3', effect: { stability: 8, prestige: -3 } }] }
-})
-const TOTAL_EVENTS = authoredEvents.length + generatedEvents.length
+// 原先这里是 Array.from({ length: 83 }) 生成的模板事件（「乱世传闻 · 37」那批），
+// 已由 events.ts 的手写事件替换。tim.lu 手写的 authoredEvents 与 CHALLENGES 原样保留。
+const EVENT_POOL: GameEvent[] = [...authoredEvents, ...handwrittenEvents]
+const TOTAL_EVENTS = EVENT_POOL.length
 const FINAL_EVENT: GameEvent = { id: 'founding', title: '最后的问答：新朝姓什么？', body: '旧王朝的旗帜在城头落下。你的军队、臣子与百姓都在等一句话：你要用什么方式结束这场乱世？', source: '终局 · 开国大典', phase: '建国', options: [{ label: '以民心立国', detail: '需要民心与稳定', effect: { morale: 10 } }, { label: '以军功立国', detail: '需要兵力与威望', effect: { army: 10 } }, { label: '以万邦立国', detail: '需要城市与盟友', effect: { prestige: 10 } }] }
 const CHALLENGES: GameEvent[] = [
   { id: 'challenge-1', title: '蛰伏试炼：夜渡渭水', body: '你的营地被官军发现。只有在今夜渡过渭水，才能保住第一支队伍。', source: '阶段挑战 · 蛰伏', phase: '蛰伏', options: [{ label: '冒险夜渡', detail: '成功率 55% · 兵力 +35、威望 +12', success: 0.55, effect: {}, reward: { army: 35, prestige: 12 } }, { label: '绕路潜行', detail: '成功率 90% · 兵力 +8', success: 0.9, effect: {}, reward: { army: 8 } }] },
@@ -69,14 +68,35 @@ const shuffle = <T,>(items: T[]) => [...items].sort(() => Math.random() - 0.5)
 const phaseFor = (count: number): Phase => PHASES[Math.min(4, Math.floor(count / 4))]
 const clamp = (value: number) => Math.max(0, Math.min(100, value))
 const formatTime = (seconds: number) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
+const DECK_SIZE = 21
+const grants = (event: GameEvent, key: 'spouse' | 'armyType') => event.options.some((o) => o.effect[key] !== undefined)
+
+/**
+ * 按幕抽牌。
+ * 原本是把全池乱洗后顺序发牌，事件自带的 `phase` 只用于显示——
+ * 于是「开国大典」气质的事件会出现在第 2 个抉择。模板事件内容空洞看不出来，
+ * 换成手写事件后会立刻穿帮，所以这里改成每个位置只从当幕的事件里抽。
+ * 另外每局最多各出现一次联姻与军制事件，避免「结这门亲」连着来两回。
+ */
 const prepareDeck = () => {
-  const seenEvents = new Set<string>()
+  const byPhase = new Map<Phase, GameEvent[]>(PHASES.map((p) => [p, shuffle(EVENT_POOL.filter((e) => e.phase === p))]))
+  const used = new Set<string>()
+  let hasSpouse = false
+  let hasArmyType = false
+  const drawn: GameEvent[] = []
+  for (let i = 0; i < DECK_SIZE; i++) {
+    const ok = (e: GameEvent) =>
+      !used.has(e.id) && !(hasSpouse && grants(e, 'spouse')) && !(hasArmyType && grants(e, 'armyType'))
+    // 优先抽当幕的事件；该幕抽空了就退回全池，保证牌堆一定发得满
+    const pick = (byPhase.get(phaseFor(i)) ?? []).find(ok) ?? shuffle(EVENT_POOL).find(ok)
+    if (!pick) break
+    used.add(pick.id)
+    if (grants(pick, 'spouse')) hasSpouse = true
+    if (grants(pick, 'armyType')) hasArmyType = true
+    drawn.push(pick)
+  }
   const seenTalents = new Set<string>()
-  return shuffle([...authoredEvents, ...generatedEvents]).filter((event) => {
-    if (seenEvents.has(event.id)) return false
-    seenEvents.add(event.id)
-    return true
-  }).map((event) => ({ ...event, options: event.options.map((option) => {
+  return drawn.map((event) => ({ ...event, options: event.options.map((option) => {
     const talent = option.effect.talent
     if (!talent || !seenTalents.has(talent)) {
       if (talent) seenTalents.add(talent)
@@ -126,7 +146,7 @@ export default function App() {
     const effect = applyCourt(applyPassive(current.monarch.name, option.effect, current.eventCount), court(current))
     // 修复：原本 death 字段从未读取、靠改写 city 导致「可能」其实必死
     const risky = effect.death === true
-    const died = risky && Math.random() < 0.35
+    const died = risky && Math.random() < DEATH_CHANCE
     const gainedCity = risky ? undefined : effect.city
     const cities = gainedCity && !current.cities.includes(gainedCity) ? [...current.cities, gainedCity] : current.cities
     const talents = effect.talent && !current.talents.includes(effect.talent) ? [...current.talents, effect.talent].slice(-6) : current.talents
@@ -254,6 +274,6 @@ export default function App() {
   if (run.city === '中道崩殂') return <main className="dynasty-app lobby-screen"><div className="lobby-seal">殁</div><p className="eyebrow">史册 · 中道崩殂</p><h1>天命<span>未竟</span></h1><p className="subtitle">你的君王倒在乱世途中。群臣争论继承，诸侯重新举旗；史官只留下四个字：中道崩殂。</p><button className="start-btn" onClick={() => setRun(null)}>返回乱世 <span>→</span></button></main>
   if (run.status === 'running' && run.event.id.startsWith('challenge-')) return <main className="dynasty-app lobby-screen challenge-screen"><p className="eyebrow">{run.event.source}</p><h1>{run.event.title}</h1><p className="subtitle">{run.event.body}</p><section className="challenge-options">{run.event.options.map((option) => { const o = challengeOdds(option.success ?? 0.5, option.label, res(run), court(run)); return <button key={option.label} className="choice" onClick={() => resolveChallenge(option)}><strong>{option.label}</strong><span>{option.detail.replace(/成功率 \d+%/, `成功率 ${Math.round(o.odds * 100)}%`)}{o.hint.includes('：') ? ` ${o.hint}` : ''}</span></button> })}</section><p className="fine-print">成功率会随你的兵力、粮草、威望、内政以及朝中人才与军制浮动。失利不会立刻终局，但要付出代价。</p></main>
   const phase = phaseFor(run.eventCount)
-  return <main className="dynasty-app"><header className="topbar"><div><p className="eyebrow">{run.monarch.name} · {run.monarch.epithet}</p><h1>鼎革：<span>王朝崛起</span></h1></div><div className={`timer ${run.elapsed > TIME_LIMIT * 0.75 ? 'urgent' : ''}`} title="每做一次抉择，天下形势就推进一步。时间耗尽，旧朝会先一步收拢残局。"><b>⏳ {formatTime(TIME_LIMIT - run.elapsed)}</b><small>天下留给你的时间</small></div></header><section className="dashboard"><div className="phase-track">{PHASES.map((item, index) => <div key={item} className={`phase ${index <= PHASES.indexOf(phase) ? 'active' : ''}`}><span>{index + 1}</span>{item}</div>)}</div><div className="stats"><Stat label="粮草" value={run.grain} icon="🌾" note={`军需 -${run.upkeep}/回合`} warn={run.grain <= run.upkeep * 3} /><Stat label="银两" value={run.silver} icon="🪙" /><Stat label="民心" value={run.morale} icon="❤" warn={run.morale <= 15} /><Stat label="威望" value={run.prestige} icon="★" /><Stat label="兵力" value={run.army} icon="⚔" /><Stat label="稳定" value={run.stability} icon="⚖" warn={run.stability <= 15} /></div></section><div className="game-grid"><aside className="realm-panel"><p className="eyebrow">你的势力</p><h2>{run.city}</h2><p className="army-name">{run.armyType}</p><div className="map-grid">{CITIES.map((city) => <span key={city} className={run.cities.includes(city) ? 'owned' : ''}>{city}</span>)}</div><div className="roster"><p>人才 {run.talents.length}/6</p><div>{run.talents.length ? run.talents.map((talent) => <span key={talent}>{talent}</span>) : <small>乱世尚未有人投效</small>}</div><p>配偶</p><strong>{isMarried(run.spouse) ? run.spouse : '尚未成家'}</strong></div><div className="boons"><p className="eyebrow">朝堂加成</p>{courtSummary(court(run)).length ? courtSummary(court(run)).map((line) => <span key={line}>{line}</span>) : <small>还没有人为你带来额外的助力</small>}</div></aside><section className="event-column"><div className="event-meta"><span>第 {Math.min(run.eventCount + 1, 21)} / 21 个抉择</span><span>{run.event.source}</span></div><article className="event-card"><div className="wax-seal">诏</div><p className="eyebrow">{run.event.phase} · {run.event.source.split(' · ')[0]}</p><h2>{run.event.title}</h2><p className="event-body">{run.event.body}</p><div className="choices">{run.event.options.map((option) => <button key={option.label} className="choice" onClick={() => choose(option)}><strong>{option.label}</strong><span>{option.detail}</span></button>)}</div>{!run.activeUsed && <button className="royal-btn" onClick={useActive}>👑 {run.monarch.active}（每局一次）</button>}</article>{run.crisis && <div className="crisis-banner">⚠ {run.crisis}</div>}<div className="chronicle"><p className="eyebrow">起居注</p>{run.log.map((line, index) => <p key={`${line}-${index}`} className={index === 0 ? 'latest' : ''}>{line}</p>)}</div></section></div>{(run.status === 'victory' || run.status === 'defeat') && <div className="result-overlay"><div className={`result-card ${run.status}`}><p className="eyebrow">{run.status === 'victory' ? `新朝已立 · ${run.reign ?? ''}` : '天命未成'}</p><h2>{run.endTitle ?? (run.status === 'victory' ? '天下换了姓' : '乱世吞没了你')}</h2><p>{run.ending}</p><div className="result-stats"><span>城市 {run.cities.length}</span><span>人才 {run.talents.length}</span><span>抉择 {run.eventCount}</span></div>{run.unlockedName && <p className="unlock-note">🔓 解锁新君王：<b>{run.unlockedName}</b></p>}<button className="start-btn" onClick={() => setRun(null)}>再开一局 <span>→</span></button></div></div>}</main>
+  return <main className="dynasty-app"><header className="topbar"><div><p className="eyebrow">{run.monarch.name} · {run.monarch.epithet}</p><h1>鼎革：<span>王朝崛起</span></h1></div><div className={`timer ${run.elapsed > TIME_LIMIT * 0.75 ? 'urgent' : ''}`} title="每做一次抉择，天下形势就推进一步。时间耗尽，旧朝会先一步收拢残局。"><b>⏳ {formatTime(TIME_LIMIT - run.elapsed)}</b><small>天下留给你的时间</small></div></header><section className="dashboard"><div className="phase-track">{PHASES.map((item, index) => <div key={item} className={`phase ${index <= PHASES.indexOf(phase) ? 'active' : ''}`}><span>{index + 1}</span>{item}</div>)}</div><div className="stats"><Stat label="粮草" value={run.grain} icon="🌾" note={`军需 -${run.upkeep}/回合`} warn={run.grain <= run.upkeep * 3} /><Stat label="银两" value={run.silver} icon="🪙" /><Stat label="民心" value={run.morale} icon="❤" warn={run.morale <= 15} /><Stat label="威望" value={run.prestige} icon="★" /><Stat label="兵力" value={run.army} icon="⚔" /><Stat label="稳定" value={run.stability} icon="⚖" warn={run.stability <= 15} /></div></section><div className="game-grid"><aside className="realm-panel"><p className="eyebrow">你的势力</p><h2>{run.city}</h2><p className="army-name">{run.armyType}</p><div className="map-grid">{CITIES.map((city) => <span key={city} className={run.cities.includes(city) ? 'owned' : ''}>{city}</span>)}</div><div className="roster"><p>人才 {run.talents.length}/6</p><div>{run.talents.length ? run.talents.map((talent) => <span key={talent}>{talent}</span>) : <small>乱世尚未有人投效</small>}</div><p>配偶</p><strong>{isMarried(run.spouse) ? run.spouse : '尚未成家'}</strong></div><div className="boons"><p className="eyebrow">朝堂加成</p>{courtSummary(court(run)).length ? courtSummary(court(run)).map((line) => <span key={line}>{line}</span>) : <small>还没有人为你带来额外的助力</small>}</div></aside><section className="event-column"><div className="event-meta"><span>第 {Math.min(run.eventCount + 1, 21)} / 21 个抉择</span><span>{run.event.source}</span></div><article className="event-card"><div className="wax-seal">诏</div><p className="eyebrow">{run.event.phase} · {run.event.source.split(' · ')[0]}</p><h2>{run.event.title}</h2><p className="event-body">{run.event.body}</p><div className="choices">{run.event.options.map((option) => <button key={option.label} className={`choice${option.effect.death ? ' choice-risk' : ''}`} onClick={() => choose(option)}><strong>{option.label}</strong><span>{option.detail}</span>{option.effect.death && <em className="risk-tag">☠ 阵亡风险 {Math.round(DEATH_CHANCE * 100)}%</em>}</button>)}</div>{!run.activeUsed && <button className="royal-btn" onClick={useActive}>👑 {run.monarch.active}（每局一次）</button>}</article>{run.crisis && <div className="crisis-banner">⚠ {run.crisis}</div>}<div className="chronicle"><p className="eyebrow">起居注</p>{run.log.map((line, index) => <p key={`${line}-${index}`} className={index === 0 ? 'latest' : ''}>{line}</p>)}</div></section></div>{(run.status === 'victory' || run.status === 'defeat') && <div className="result-overlay"><div className={`result-card ${run.status}`}><p className="eyebrow">{run.status === 'victory' ? `新朝已立 · ${run.reign ?? ''}` : '天命未成'}</p><h2>{run.endTitle ?? (run.status === 'victory' ? '天下换了姓' : '乱世吞没了你')}</h2><p>{run.ending}</p><div className="result-stats"><span>城市 {run.cities.length}</span><span>人才 {run.talents.length}</span><span>抉择 {run.eventCount}</span></div>{run.unlockedName && <p className="unlock-note">🔓 解锁新君王：<b>{run.unlockedName}</b></p>}<button className="start-btn" onClick={() => setRun(null)}>再开一局 <span>→</span></button></div></div>}</main>
 }
 function Stat({ label, value, icon, note, warn }: { label: string; value: number; icon: string; note?: string; warn?: boolean }) { return <div className={`stat${warn ? ' stat-warn' : ''}`}><span>{icon}</span><div><strong>{value}</strong><small>{label}{note && <em className="stat-note">{note}</em>}</small></div></div> }

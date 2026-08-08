@@ -188,6 +188,13 @@ export function courtSummary(court: Court): string[] {
   return out
 }
 
+/**
+ * 「可能中道崩殂」的真实概率。
+ * 原本 `death` 字段从未被读取，靠改写 city 触发死亡画面，写着「可能」实为必死；
+ * 修复后是真概率，但玩家仍看不见数字——所以这里导出，由界面直接写进选项说明。
+ */
+export const DEATH_CHANCE = 0.3
+
 // ---------- 2. 资源危机：让粮草、民心、稳定真的有牙齿 ----------
 export interface Crisis {
   res: Resources
@@ -290,34 +297,46 @@ export interface Ending {
 }
 
 export function resolveEnding(r: Resources, cities: number, talents: number): Ending {
-  // 立国门槛：不再是三选一的低标准，而要求真正经营过
-  const pillars = [r.army >= 55, r.morale >= 60, r.prestige >= 55].filter(Boolean).length
-  const foundation = r.stability >= 30 && r.grain > 0
+  // 立国门槛。手写事件（events.ts）的数值尺度远大于原先的模板事件——
+  // 沿用旧门槛会让随机乱选也有 77% 胜率，这里按新的资源吞吐量重新标定。
+  const BAR = { army: 75, morale: 70, prestige: 60 }
+  const hit = { army: r.army >= BAR.army, morale: r.morale >= BAR.morale, prestige: r.prestige >= BAR.prestige }
+  const pillars = [hit.army, hit.morale, hit.prestige].filter(Boolean).length
+  const foundation = r.stability >= 35 && r.grain > 0
   // 疆域与朝堂也算数：城多、贤才多，本身就是一种立国资本
   const support = (cities >= 4 ? 1 : 0) + (talents >= 4 ? 1 : 0)
-  if (pillars === 0 || !foundation) {
+  // 立国要两根柱子。只靠一项撑不起一个王朝，也正是这一条把「随便乱选」挡在门外：
+  // 乱选会让六项资源都停在中游，而立国要求你真的走出一条路线。
+  if (pillars < 2 || !foundation) {
+    const missing: string[] = []
+    if (!hit.army) missing.push(`兵力 ${r.army}/${BAR.army}`)
+    if (!hit.morale) missing.push(`民心 ${r.morale}/${BAR.morale}`)
+    if (!hit.prestige) missing.push(`威望 ${r.prestige}/${BAR.prestige}`)
+    const short = `（差在：${missing.join('、')}${r.stability < 35 ? `、稳定 ${r.stability}/35` : ''}）`
     return {
       win: false,
       title: '乱世吞没了你',
       reign: '无号',
-      text: r.stability < 30
+      text: (r.stability < 35
         ? '你夺下了城，却始终没能把权力变成秩序。新朝还未诞生，诸侯已开始争夺你的遗产。'
-        : '府库空空、军心涣散。天命在你指间滑过，史书只留下一行姓名。',
+        : '你什么都沾了一点，什么都没有立住。天命在你指间滑过，史书只留下一行姓名。') + short,
     }
   }
   // 最高结局：三根支柱立住两根，且疆域或朝堂也撑得起来
-  if (pillars >= 2 && support >= 1 && r.stability >= 45) {
+  if (pillars >= 2 && support >= 1 && r.stability >= 55) {
     return {
       win: true, title: '万世之基', reign: '开元之世',
       text: `${cities} 座城、${talents} 位贤才、一支养得起的军队——你留下的不是一次胜利，而是一套能自己运转下去的秩序。史官写：此非一人之功，乃一朝之始。`,
     }
   }
-  // 以最高的一项决定王朝气质。
+  // 以最强的一项决定王朝气质。
   // 注意：兵力没有上限，民心与威望封顶 100——直接比大小的话兵力永远胜出，
-  // 「仁政之世」会变成不可达结局。因此比的是各自超出立国门槛的倍数。
-  const byArmy = r.army / 55
-  const byMorale = r.morale / 60
-  const byPrestige = r.prestige / 55
+  // 「仁政之世」会变成不可达结局。这里比的是「超出门槛的部分占各自可用空间的比例」，
+  // 三条路线因此有同样的上限（1.0），谁走得更极致谁定调。
+  const ratio = (v: number, bar: number, ceil: number) => (v - bar) / (ceil - bar)
+  const byArmy = ratio(r.army, BAR.army, 150)
+  const byMorale = ratio(r.morale, BAR.morale, 100)
+  const byPrestige = ratio(r.prestige, BAR.prestige, 100)
   const top = Math.max(byArmy, byMorale, byPrestige)
   if (top === byArmy) {
     return {

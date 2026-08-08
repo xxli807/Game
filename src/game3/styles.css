@@ -63,6 +63,10 @@
 .timer.urgent { color: #fff2e0; background: #a52d26; border-color: #7c2019; animation: pulse 1.2s infinite; }
 .timer.urgent small { color: #f6d3c4; }
 
+/* 赌命选项：把真实概率写在脸上，而不是含糊的「可能」 */
+.choice-risk { border-left-color: #6b1d17; background: #f0d6c4; }
+.risk-tag { display: block; margin-top: 4px; color: #8e2e25; font-style: normal; font-weight: 700; font-size: .72rem; letter-spacing: .04em; }
+
 /* 通关解锁提示 */
 .unlock-note { margin: -8px 0 20px; padding: 9px 12px; color: #6b4a1e !important; background: rgba(214,168,74,.24); border: 1px dashed #b98a3c; font-size: .85rem; }
 
