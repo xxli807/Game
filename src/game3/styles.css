@@ -37,10 +37,15 @@
 .monarch-pick {
   padding: 11px 4px; font-size: .88rem; color: #4a3222;
   background: #f3dfb9; border: 2px solid #c09a6b; border-radius: 2px;
-  transition: transform .12s, background .12s;
+  transition: transform .12s, background .12s, box-shadow .12s;
 }
-.monarch-pick:hover:not(:disabled) { transform: translateY(-2px); background: #fbeccd; }
+/* 悬停只做「抬起 + 投影」，不动配色。
+   之前 hover 无差别地把底色刷成浅奶油色，而选中项的白字来自 .selected
+   （特异性更低，改不回来）——白字落在浅底上就完全看不见了。 */
+.monarch-pick:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(99,58,27,.3); }
+.monarch-pick:not(.selected):hover:not(:disabled) { background: #fbeccd; }
 .monarch-pick.selected { color: #fff5dd; background: #8e2e25; border-color: #5e1d19; font-weight: 700; }
+.monarch-pick.selected:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(142,46,37,.5); }
 .monarch-pick.locked { color: #b9a184; background: rgba(255,255,255,.28); border-color: #d9c5a4; border-style: dashed; cursor: not-allowed; }
 
 /* 资源条：军需提示与告警 */
@@ -64,7 +69,10 @@
 .timer.urgent small { color: #f6d3c4; }
 
 /* 赌命选项：把真实概率写在脸上，而不是含糊的「可能」 */
-.choice-risk { border-left-color: #6b1d17; background: #f0d6c4; }
+/* 同理：.choice:hover 的特异性高于 .choice-risk，不单独写一条的话，
+   悬停时赌命选项的红底会被冲成普通选项的颜色。 */
+.choice-risk, .choice-risk:hover { background: #f0d6c4; border-left-color: #6b1d17; }
+.choice-risk:hover { background: #f6e0cd; }
 .risk-tag { display: block; margin-top: 4px; color: #8e2e25; font-style: normal; font-weight: 700; font-size: .72rem; letter-spacing: .04em; }
 
 /* 通关解锁提示 */

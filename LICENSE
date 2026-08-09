@@ -1,0 +1,41 @@
+Copyright (c) 2026 xxli807 and tim.lu. All rights reserved.
+
+PROPRIETARY — ALL RIGHTS RESERVED
+
+This repository (the "Work") includes the source code, game design, written
+content, artwork, and all other materials it contains. The Work is made
+publicly viewable solely because it is hosted on GitHub Pages so that the
+games can be played in a browser. Public visibility is not an offer of a
+licence, and nothing here places the Work in the public domain.
+
+WHAT YOU MAY DO
+  * Play the games at https://xxli807.github.io/Game/ and its sub-paths,
+    for personal, non-commercial enjoyment.
+  * Read the source code in this repository.
+
+WHAT YOU MAY NOT DO
+No permission is granted to any person to use, copy, modify, adapt, merge,
+publish, distribute, sublicense, sell, host, or create derivative works from
+any part of the Work, in whole or in part, in any medium, whether or not for
+commercial purposes. This includes, without limitation:
+  * reusing the source code, in original or modified form, in another project;
+  * redistributing or re-hosting the games or their assets;
+  * using the artwork, written content, or game design in another work;
+  * using the Work, or any part of it, to train machine-learning models.
+
+Any use beyond the permissions above requires prior written permission from
+the copyright holders.
+
+THIRD-PARTY COMPONENTS
+The Work depends on third-party open-source packages (React, Vite, TypeScript,
+and others declared in package.json). Those packages remain governed by their
+own respective licences, and nothing in this file restricts them. This licence
+applies only to the material authored in this repository.
+
+NO WARRANTY
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE WORK OR THE USE OR OTHER DEALINGS IN THE WORK.
