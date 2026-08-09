@@ -6,7 +6,7 @@ This repository (the "Work") includes the source code, game design, written
 content, artwork, and all other materials it contains. The Work is made
 publicly viewable solely because it is hosted on GitHub Pages so that the
 games can be played in a browser. Public visibility is not an offer of a
-licence, and nothing here places the Work in the public domain.
+license, and nothing here places the Work in the public domain.
 
 WHAT YOU MAY DO
   * Play the games at https://xxli807.github.io/Game/ and its sub-paths,
@@ -29,7 +29,7 @@ the copyright holders.
 THIRD-PARTY COMPONENTS
 The Work depends on third-party open-source packages (React, Vite, TypeScript,
 and others declared in package.json). Those packages remain governed by their
-own respective licences, and nothing in this file restricts them. This licence
+own respective licenses, and nothing in this file restricts them. This license
 applies only to the material authored in this repository.
 
 NO WARRANTY
