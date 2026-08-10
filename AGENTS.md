@@ -124,3 +124,7 @@ Claude Code 的技能（skill）目录。**每个都是普通 Markdown，Codex �
 - macOS 文件系统大小写不敏感：不要用 `dist/v1` 与 `dist/V1` 这类同名不同例的目录。
 - 大图不要提交进 `public/arts/`（会拖垮推送）；原始素材放 `art-source/`（已 gitignore）。
 - `tsconfig.json` 开了 `noUnusedLocals`：删掉一处引用后，原来的常量可能立刻变成编译错误。
+
+## 美術方向（v2）
+- 可參考《A Game of Thrones: The Card Game》與《A Game of Thrones: The Board Game》的整體氛圍：封建權力鬥爭、凜冽史詩感、羊皮紙與家族紋章式的視覺語言。
+- 只取其高層次的美術方向；不得複製、重繪或使用任何受版權保護的角色、家徽、卡牌版式、插圖或其他可識別素材。
