@@ -76,18 +76,42 @@ npm run dev:v3    # 调试 v3
   七种结局：万世之基 / 马上得天下 / 民心所归 / 万邦来朝 / 乱世吞没了你 / 天命未成 / 中道崩殂。
 - ⚠️ **改事件数值必须重跑平衡测试**：`events.ts` 的数值尺度远大于最初的模板事件，
   当初直接换上去后随机胜率从 50% 飙到 77%，是靠抬高立国门槛拉回来的。
-  当前基准：**随机乱选 45 局 ≈ 38% 胜率**。
+  当前基准：`node .claude/skills/v3-balance/balance.mjs 45` →
+  **21 胜 19 败 5 崩殂 = 47% 胜率**（2026-08-09 实测于 823123e）。
+  更早记录的 38%（`Plan/game3-improvements.md`）出自另一个已经删掉的一次性脚本；
+  n=45 时一个标准差就有约 7 个百分点，两者统计上区分不开，**此后请对照 47% 这一行**。
 
 ## 验证方式
 ```bash
 npx tsc --noEmit && npm run build
+(python3 -m http.server 8080 --directory dist &)
+node .claude/skills/verify/smoke.mjs           # 三个游戏各开一局，断言控制台零报错
+node .claude/skills/v3-balance/balance.mjs 45  # v3 数值改动必跑：随机乱选 45 局看胜率
 ```
-再用 Playwright 无头浏览器实际跑一局（本仓库已装 playwright）：
-起 `python3 -m http.server 8080 --directory dist`，脚本放在**仓库根目录**（`_*.mjs` 已被 gitignore），
-截图与断言并检查 `pageerror` / console error。音效可通过包装 `AudioContext` 计数验证。
+这两个脚本是**提交进仓库的常备工具**，不依赖任何 AI 工具，`node` 直接跑就行。
+Playwright 已装在 `node_modules`，但**故意不写进 `package.json`**——
+它是本地验收工具，进了依赖会让 CI 的 `npm ci` 挂掉。
 
-v3 特有：脚本里跑 20–45 局随机乱选，统计胜/负/崩殂、结局种类、幕次是否错配。
+一次性的调试脚本仍然放**仓库根目录**并命名 `_*.mjs`（已 gitignore）。
+音效可通过包装 `AudioContext` 计数验证。
+
+v3 的平衡测试统计胜/负/崩殂、结局种类、幕次是否错配、模板残留。
 数值一改就看胜率漂移，比肉眼看代码可靠得多。
+
+## `.claude/` 里有什么
+Claude Code 的技能（skill）目录。**每个都是普通 Markdown，Codex 也能直接读**，
+里面的脚本两边都能跑：
+
+| 技能 | 内容 |
+|---|---|
+| `verify` / `ship` | 验收流程；发布流程（拉取变基 → 验收 → 提交 → 推 main → 盯部署） |
+| `v3-balance` | v3 平衡回归，含 `balance.mjs` 与基准数字 |
+| `build-targets` | 三合一构建：TARGET 机制、dist 布局、Pages 与大小写转发 |
+| `react` / `color-palette` / `a11y-review` | 引擎与 React 的边界；三套独立配色；可访问性检查（含对比度脚本） |
+| `real-work` / `pr` | 计划文档写法（落到 `Plan/`）；开 PR 的规矩 |
+
+`.claude/settings.json` 只放权限白名单（构建、类型检查、读 git），
+`git push` 一律仍需确认——**推 main 等于发布**。
 
 ## 已知注意事项
 - macOS 文件系统大小写不敏感：不要用 `dist/v1` 与 `dist/V1` 这类同名不同例的目录。
