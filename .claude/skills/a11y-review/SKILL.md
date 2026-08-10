@@ -1,84 +1,93 @@
 ---
 name: a11y-review
-description: Review React/MUI UI for accessibility (WCAG 2.2 AA). Use when the user says "a11y review", "accessibility check", "is this accessible", or after building/changing UI components, forms, animations, or canvas interactions. Adapted for this repo's stack — React 19, MUI 7, dark theme, heavy keyframe/canvas animation, draggable whiteboard, kids audience.
+description: 按 WCAG 2.2 AA 审查这三个游戏的可访问性——canvas 生存游戏（v1/v2）的键盘操作与动效，文字选择游戏（v3）的对比度与焦点可见性。用户说「a11y」「可访问性」「无障碍」「色盲/弱视能不能玩」，或改完 UI/CSS 之后使用。
 ---
 
-# Accessibility Review (WCAG 2.2 AA)
+# 可访问性审查（WCAG 2.2 AA）
 
-Adapted from github/awesome-copilot `a11y.instructions.md` for this codebase. Review changed components against the checks below. Report findings as **CRITICAL** (blocks merge), **IMPORTANT** (fix this PR), or **SUGGESTION**. Quote the file:line and give the corrected code.
+针对本仓库的实际形态：**v1/v2 是 canvas 生存游戏**（键盘操作，画面全在 `<canvas>` 里，
+屏幕阅读器什么也读不到），**v3 是纯文字选择游戏**（DOM 按钮，明清纸面配色）。
+没有 MUI、没有组件库，样式是每个游戏各自的 `styles.css`（纯手写 CSS）。
 
-This is a learning app for a young child, so favour large targets, clear focus, and motion that respects user preferences.
+审查改动过的部分即可。结论分三档：**必改**（能用性问题）/ **应改**（这次一起改）/ **建议**。
+每条给出 `文件:行` 和改法。
 
-## How to run a review
+## 现状（2026-08 扫描，写清楚是为了不重复报同一批老问题）
 
-1. `git diff origin/main...HEAD --stat` to find changed `.tsx` files, then read them.
-2. Walk each check below against the changed UI. Skip checks that don't apply.
-3. Group findings by severity, each with `file:line`, the rule, and a fix.
+| 项 | 现状 |
+|---|---|
+| `prefers-reduced-motion` | 三个游戏**一处都没有** |
+| `:focus` / `:focus-visible` 样式 | **没有**（键盘用户看不到焦点在哪） |
+| `aria-*` | 全仓库只有 2 处（v1/v2 的职业选择器） |
+| `<html lang>` | v3 是 `zh-CN`；**v1/v2 写的是 `en`，但 v2 已经全中文了** |
+| 最小字号 | `10px` / `.66rem`（v3 侧栏、`.fine-print`） |
 
-## The checks (highest-value first for this repo)
+## 检查项（按本仓库的价值排序）
 
-### 1. Icon-only buttons need an accessible name — CRITICAL
-This repo has many MUI icon usages. A `<Button>` with only an icon (or `<IconButton>`) and no visible text is unreadable by screen readers.
-```tsx
-// BAD — no accessible name
-<IconButton onClick={erase}><EraseIcon /></IconButton>
-// GOOD
-<IconButton aria-label="Clear whiteboard" onClick={erase}><EraseIcon /></IconButton>
-```
-Buttons that already have visible text (e.g. the whiteboard "Clear" / "Minimize") are fine. Emoji inside a label (`▶ ASSEMBLE!`) counts as text but add `aria-label` if the emoji carries the only meaning.
+### 1. 对比度 — 必改
+v3 的纸面配色很容易踩线。已知实例：`.fine-print { color: #967757 }` 落在
+`#efe1c4` 的背景上 → **3.2:1**，正文要求 4.5:1，不合格。
 
-### 2. Respect `prefers-reduced-motion` — IMPORTANT
-The login screen runs infinite animations (`shieldSpin`, `reactorPulse`, `titleBob`) and an animated canvas; sections use hover scale transforms. Vestibular users need an opt-out (WCAG 2.3.3).
-```tsx
-<style>{`
-  @keyframes shieldSpin { /* ... */ }
-  @media (prefers-reduced-motion: reduce) {
-    * { animation: none !important; transition: none !important; }
-  }
-`}</style>
-```
-For the canvas `requestAnimationFrame` loop, check `window.matchMedia('(prefers-reduced-motion: reduce)').matches` and render a single static frame instead of looping.
-
-### 3. Colour contrast on the dark theme — IMPORTANT
-Text must hit 4.5:1 (3:1 for large/bold ≥18pt). Watch low-opacity greys on dark backgrounds — `#78909c`, `#90a4ae`, and `rgba(255,255,255,0.x)` hint text often fail. Never rely on colour alone to signal correct/incorrect — this repo already pairs a `CheckIcon`/`WrongIcon` with text, which is the correct pattern; keep it.
-
-### 4. Form controls need labels — IMPORTANT
-MUI `TextField label="…"` is good. A bare `<Select>` needs an associated label or `aria-label` (e.g. the math answer dropdowns, science year/topic selectors).
-```tsx
-<Select aria-label="Choose your answer" value={...}>…</Select>
+```bash
+node .claude/skills/a11y-review/contrast.mjs "#967757" "#efe1c4"
 ```
 
-### 5. Target size ≥ 24×24 px (kids audience → aim 44×44) — SUGGESTION
-Small `size="small"` buttons with `py: 0.3` can fall under the minimum. Give interactive controls enough padding/spacing.
+正文 ≥ 4.5:1；≥18.66px 粗体或 ≥24px 的大字 ≥ 3:1；按钮边框等非文字元素 ≥ 3:1。
+**改颜色时不要只改这一处**——先看 `/color-palette`，同一个色值在别处也可能用到。
 
-### 6. Keyboard operability — IMPORTANT
-- Every interactive element reachable and operable by keyboard (Tab/Enter/Space). Prefer native `<button>`/MUI `Button` over `onClick` on a `<Box>`/`<div>`.
-- The draggable whiteboard is mouse/touch only. Dragging is non-essential (it's a decorative position), so this is acceptable, but the open/erase/minimize actions must be keyboard-reachable buttons (they are). Don't add drag as the *only* way to do something meaningful.
-- Don't remove the focus ring. If custom `sx` overrides outlines, add a visible `:focus-visible` style (WCAG 2.4.7).
+### 2. 焦点可见 — 必改
+仓库里所有 `.choice` / `.monarch-pick` / `.play-btn` 都只写了 `:hover`。
+只用键盘的玩家（以及不用鼠标的玩家）完全看不出焦点在哪。
 
-### 7. Don't put `aria-hidden` on focusable elements, and prefer native semantics — CRITICAL
-Use `<button>` not `<div role="button">`. Don't `aria-hidden="true"` a focusable node.
-
-### 8. Page has a title and a single `<h1>` per view — SUGGESTION
-Each route/view should have a clear heading hierarchy; decorative emoji headings should still be real `<Typography variant="h*">`.
-
-## Output format
-```
-## Accessibility Review
-
-### CRITICAL
-- `src/components/Foo.tsx:42` — Icon-only button has no accessible name. Add `aria-label="…"`.
-
-### IMPORTANT
-- ...
-
-### SUGGESTION
-- ...
-
-No issues found in: <files reviewed with no problems>
+```css
+/* 每个 styles.css 里加一条兜底就够，不要逐个按钮写 */
+:focus-visible { outline: 3px solid #8e2e25; outline-offset: 2px; }
 ```
 
-## Don't
-- Don't rewrite components wholesale — report findings and the minimal fix unless asked to apply them.
-- Don't invent issues to pad the list; "No issues found" is a valid result.
-- Don't target WCAG 3.0 — it's still a draft; target 2.2 AA.
+不要用 `outline: none` 关掉默认焦点圈而不给替代物。
+
+### 3. `prefers-reduced-motion` — 应改
+v2 有屏幕震动 / hit-stop / 击杀连击特效，v3 的 `.timer.urgent` 是 `animation: pulse 1.2s infinite`。
+前庭敏感的人会不舒服。
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+```
+
+canvas 里的震动要在 JS 里读：`matchMedia('(prefers-reduced-motion: reduce)').matches`，
+命中就把 shake 幅度设为 0。**不要**顺手把游戏性动画（角色、投射物）也停掉。
+
+### 4. `<html lang>` 要和实际语言一致 — 应改
+v2 已经全中文，`src/game2/index.html` 却还是 `lang="en"`：屏幕阅读器会用英语发音读中文。
+改成 `zh-CN`。v1 仍是英文界面，保持 `en` 正确。
+
+### 5. 键盘可达 —— canvas 游戏的现实边界
+v1/v2 本来就是键盘游戏（WASD 移动，Q/E/R/F 技能），这点没问题。真正的缺口是：
+
+- 操作说明只在开始界面用文字列出，**游戏中无处可查**；
+- `<canvas>` 对屏幕阅读器是黑箱。至少给它一个 `aria-label` 说明这是游戏画面，
+  并在旁边放一段 `.sr-only` 文本说明操作键位；
+- 升级弹窗（`LevelUpModal`）已经监听了键盘，确认它出现时**焦点会移进去**、Esc 能关，
+  且背后的画面不会继续吃走按键。
+
+v3 全是原生 `<button>`，Tab / Enter 天然可用——**不要**把它们换成 `<div onClick>`。
+
+### 6. 只靠颜色传达信息 — 应改
+v3 的 `.stat-warn`（粮草告急）、`.choice-risk`（阵亡风险）目前主要靠红色区分。
+危险选项已经有 `☠ 阵亡风险 30%` 的文字，保持住；`.stat-warn` 建议也加一个符号或文字，
+不要只有变红。
+
+### 7. 点击目标大小
+WCAG 2.2 的 24×24 CSS px 下限。v3 的 `.monarch-pick` 是 12 格网格，
+移动端窄屏时容易掉到线下——改布局时顺手量一下。
+
+## 怎么快速验证
+
+```bash
+node .claude/skills/a11y-review/contrast.mjs "#前景" "#背景"     # 单对颜色
+```
+
+真要看效果就按 `/verify` 起 `dist`，用 Playwright 截图；
+测键盘则在脚本里连续 `page.keyboard.press('Tab')` 并截图看焦点圈走到哪。
