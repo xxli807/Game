@@ -72,7 +72,19 @@ npm run dev:v3    # 调试 v3
 - **全中文**。注意：UI 逻辑不要拿显示文字做判断，用 `HudState.classId` 这类稳定字段
   （之前就因为比较英文职业名而踩过坑）。
 
-## v3 现状要点
+## v3 连续世界（2026-09-12）
+- 大厅保留两种入口（2026-09-13）：「进入天下」开始原文字抉择模式；「Start Playing」进入 `src/game3/action/World.tsx`。两者共享君王选择与解锁，每局由所点按钮确定玩法。`GameModes.tsx` 是入口组件。
+- 3D 模式在同一张地图巡视、听取事件、执行选项，包含统兵、护送、配送、交涉、颁诏；没有 v2 式大首领结尾。
+- **三维村庄（2026-09-13）**：`render3d.ts` 用 three.js 渲染（依赖已进 `package.json`，只打进 v3），第三人称镜头可转可缩放，建筑实心；无 WebGL2 时退回 2D `render.ts`。
+  村民与「政令遗迹」在 `village.ts`：四柱决定摊位/巡卒/天气，每个政令结果在村里留下永久建筑，村民可交谈。道路与碰撞在 `layout.ts`。
+  改布局后务必跑 `world.mjs`：它会检查车队不穿建筑、县衙实心等。详见 `Plan/game3-continuous-world.md` 末节。
+- 底层目前是 **军事 / 政治 / 经济 / 天命四柱**；下面六资源段落属于历史设计，请勿据此修改当前机制。
+- App 保留君王、事件推进、朝堂与结局；action 引擎只负责地图与实际操作。新模式以活动表现结算军情/挑战/人才；不在成功后再掷随机猝败。
+- 文字模式现在是正式入口，无需 URL 参数；历史 `?mode=chronicle` 地址仍可使用大厅的文字按钮，平衡脚本的 `.start-btn` 保持对应文字入口。四柱文字模式 45 局实测：5 胜 40 败（11%，2026-09-12）；下述 47% 是六资源历史基准，不能比较。
+- 新模式验收：`node .claude/skills/verify/world.mjs`；全仓 smoke 检查 v3 文字选项推进及 3D 世界移动与暂停。新世界的整局难度尚待人工试玩建立基准。
+- 玩法范围、验证、素材见 `Plan/game3-continuous-world.md` 与 `Plan/game3-ui-art.md`。
+
+## v3 历史现状要点（六资源时期）
 - 12 位君王各有**被动 + 每局一次的专属抉择**；初始解锁 4 位，每通关一次解锁下一位。
 - 六种资源全部参与判定；**军需**让军队每回合吃粮，粮草是真约束。
 - **朝堂加成**：人才 / 军制 / 配偶各带常驻效果（`TALENT_BOONS` 等），侧栏会列出生效条目。
@@ -96,8 +108,8 @@ node .claude/skills/verify/smoke.mjs           # 三个游戏各开一局，断�
 node .claude/skills/v3-balance/balance.mjs 45  # v3 数值改动必跑：随机乱选 45 局看胜率
 ```
 这两个脚本是**提交进仓库的常备工具**，不依赖任何 AI 工具，`node` 直接跑就行。
-Playwright 已装在 `node_modules`，但**故意不写进 `package.json`**——
-它是本地验收工具，进了依赖会让 CI 的 `npm ci` 挂掉。
+Playwright **故意不写进 `package.json`**——它是本地验收工具，进了依赖会让 CI 的 `npm ci` 挂掉。
+副作用：任何 `npm install <包>` 都会把它当多余包删掉，届时 `npm i --no-save playwright && npx playwright install chromium`。
 
 一次性的调试脚本仍然放**仓库根目录**并命名 `_*.mjs`（已 gitignore）。
 音效可通过包装 `AudioContext` 计数验证。

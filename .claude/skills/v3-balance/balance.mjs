@@ -9,7 +9,7 @@ import { chromium } from 'playwright'
 
 const args = process.argv.slice(2)
 const runs = Number(args.find((a) => /^\d+$/.test(a)) ?? 45)
-const url = args.includes('--url') ? args[args.indexOf('--url') + 1] : 'http://localhost:8080/v3/'
+const url = args.includes('--url') ? args[args.indexOf('--url') + 1] : 'http://localhost:8080/v3/?mode=chronicle'
 const fresh = args.includes('--fresh') // 每局清空 localStorage：只用初始 4 位君王，不累计解锁
 
 const PHASES = ['蛰伏', '立足', '逐鹿', '问鼎', '建国']

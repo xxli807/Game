@@ -29,4 +29,4 @@ const EVENT_ART: Record<string, string> = {
   't-warrant': `${ACT_ONE_ART_ROOT}/t-warrant.jpg`,
 }
 
-export const artForEvent = (eventId: string) => EVENT_ART[eventId]
+export const artForEvent = (eventId: string) => EVENT_ART[eventId] ?? 'arts/v3-ui/dynasty-dawn.jpg'

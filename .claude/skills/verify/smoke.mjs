@@ -12,11 +12,12 @@ const base = (args.includes('--url') ? args[args.indexOf('--url') + 1] : 'http:/
 const shots = args.includes('--shots') ? args[args.indexOf('--shots') + 1] : ''
 if (shots) mkdirSync(shots, { recursive: true })
 
-// v1/v2 是 canvas 生存游戏（键盘操作），v3 是文字选择游戏（点按钮）。
+// v1/v2 是 canvas 生存游戏；v3 分别检查文字入口与 3D 游玩入口。
 const GAMES = [
   { ver: 'v1', start: '.play-btn', kind: 'canvas' },
   { ver: 'v2', start: '.play-btn', kind: 'canvas' },
-  { ver: 'v3', start: '.start-btn', kind: 'choices' },
+  { ver: 'v3', start: '[data-mode="chronicle"]', kind: 'chronicle' },
+  { ver: 'v3', start: '[data-mode="world"]', kind: 'world' },
 ]
 
 const browser = await chromium.launch()
@@ -49,18 +50,29 @@ for (const game of GAMES) {
       }
       const alive = await page.locator('canvas').count()
       notes.push(alive ? 'canvas 在跑' : '⚠ canvas 消失了')
-    } else {
-      for (let i = 0; i < 6; i++) {
-        const opts = page.locator('.choice')
-        const n = await opts.count()
-        if (!n) break
-        await opts.nth(Math.floor(Math.random() * n)).click({ force: true }).catch(() => {})
-        await page.waitForTimeout(60)
-      }
-      notes.push(`推进到：${await page.locator('.event-meta span').first().innerText().catch(() => '未知')}`)
+    } else if (game.kind === 'chronicle') {
+      await page.waitForSelector('.event-card .choice')
+      if (await page.locator('.world-canvas').count()) throw new Error('Text mode opened the 3D world')
+      await page.locator('.event-card .choice').first().click()
+      await page.waitForFunction(() => document.querySelector('.event-meta')?.textContent?.includes('已作 1 次抉择') || document.querySelector('.result-overlay'))
+      notes.push('文字模式：阅读与抉择正常')
+    } else if (game.kind === 'world') {
+      await page.waitForSelector('.world-canvas')
+      // Headless Chromium renders WebGL on the CPU (~8 fps), so hold the key long enough for several frames.
+      if (await page.getAttribute('.world-canvas', 'data-renderer') !== '3d') throw new Error('3D renderer did not start (WebGL2 unavailable?)')
+      const player = page.locator('.world-map svg > circle')
+      const before = Number(await player.getAttribute('cx'))
+      await page.locator('.world-canvas').focus()
+      await page.keyboard.down('d'); await page.waitForTimeout(1500); await page.keyboard.up('d')
+      const after = Number(await player.getAttribute('cx'))
+      if (after <= before + 30) throw new Error('World movement did not advance the player')
+      await page.keyboard.press('Escape')
+      await page.waitForSelector('.world-modal')
+      await page.getByRole('button', { name: '继续巡视', exact: true }).click()
+      notes.push('3D 连续世界：移动、暂停与恢复正常')
     }
 
-    if (shots) await page.screenshot({ path: `${shots}/${game.ver}.png` })
+    if (shots) await page.screenshot({ path: `${shots}/${game.ver}${game.kind === 'chronicle' ? '-text' : ''}.png` })
   } catch (e) {
     errors.push(`fatal: ${e.message}`)
   }

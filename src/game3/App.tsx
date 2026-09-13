@@ -3,6 +3,9 @@ import { applyPassive, applyActive, applyCourt, badEndingChance, checkCrisis, ch
 import { loadMeta, saveMeta, recordRun, recordVictory, nextLocked, DynastyMeta } from './meta'
 import { handwrittenEvents } from './events'
 import { artForEvent } from './art'
+import { PlayGuide, RealmMap } from './interface'
+import DynastyWorld from './action/World'
+import { GameMode, GameModes } from './GameModes'
 
 const TIME_LIMIT = 480 // 21 次抉择约需 378 秒，留出约 100 秒容错：出错会逼近上限，但不至于必输
 
@@ -131,8 +134,9 @@ export default function App() {
   const [meta, setMeta] = useState<DynastyMeta>(() => loadMeta())
   const [monarch, setMonarch] = useState(() => MONARCHS.find((m) => m.name === loadMeta().unlocked[0]) ?? MONARCHS[0])
   const [run, setRun] = useState<Run | null>(null)
+  const [gameMode, setGameMode] = useState<GameMode>('chronicle')
   const persist = (next: DynastyMeta) => { setMeta(next); saveMeta(next) }
-  const startRun = () => { persist(recordRun(meta)); setRun(createRun(monarch)) }
+  const startRun = (mode: GameMode) => { setGameMode(mode); persist(recordRun(meta)); setRun(createRun(monarch)) }
   useEffect(() => {
     if (!run || run.status !== 'running' || run.event.id.startsWith('challenge-')) return
     const boundary = [4, 8, 12, 16, 20].indexOf(run.eventCount)
@@ -163,12 +167,12 @@ export default function App() {
     return base
   }
 
-  const choose = (option: EventOption) => setRun((current) => {
+  const choose = (option: EventOption, outcome?: boolean) => setRun((current) => {
     if (!current || current.status !== 'running') return current
     const domain = domainFor(current.event.source)
     let effect = applyCourt(applyPassive(current.monarch.name, option.effect, current.eventCount, current.event.phase, domain), court(current), domain)
     let militaryFailed = false
-    if (domain === 'military' && Math.random() >= militaryOdds(res(current), option.label, court(current))) {
+    if (domain === 'military' && (outcome === undefined ? Math.random() >= militaryOdds(res(current), option.label, court(current)) : !outcome)) {
       effect = militaryFailure(effect, res(current))
       militaryFailed = true
     } else if (domain === 'military') {
@@ -176,9 +180,10 @@ export default function App() {
     } else if (domain === 'political') {
       effect = politicalResult(effect, res(current), current.event.phase)
     }
+    if (outcome === false && domain !== 'military') effect = { military: Math.min(0, effect.military ?? 0), politics: Math.min(-6, effect.politics ?? 0), economy: Math.min(-6, effect.economy ?? 0), destiny: Math.min(-4, effect.destiny ?? 0) }
     effect = normalizeEffect(effect, current.event.phase)
     const hasTalent = Boolean(effect.talent && !current.talents.includes(effect.talent))
-    const recruited = hasTalent && Math.random() < recruitmentOdds(current.politics, current.monarch.name)
+    const recruited = hasTalent && (outcome ?? (Math.random() < recruitmentOdds(current.politics, current.monarch.name)))
     const recruitmentFailed = hasTalent && !recruited
     if (recruitmentFailed) effect = { ...effect, talent: undefined, politics: Math.min(-5, effect.politics ?? -5) }
     const gainedCity = militaryFailed || effect.death || effect.city === '中道崩殂' ? undefined : effect.city
@@ -201,7 +206,7 @@ export default function App() {
       city: gainedCity ?? current.city, cities, talents, spouse: nextCourt.spouse, armyType: nextCourt.armyType,
       crisis, log: log.slice(0, 5),
     }
-    const doomed = suddenEnding(next, effect.death ? 0.2 : 0)
+    const doomed = outcome === undefined || next.destiny <= 0 ? suddenEnding(next, effect.death ? 0.2 : 0) : next
     if (doomed.status !== 'running') return doomed
     if (elapsed >= TIME_LIMIT) return { ...next, status: 'defeat', endTitle: '时局已失', reign: '无号', ending: '你还在权衡时，旧朝已先一步收拢残局。你的旗号没有等到天亮。' }
     if (current.event.id === 'founding') {
@@ -211,18 +216,18 @@ export default function App() {
     return next
   })
 
-  const resolveChallenge = (option: EventOption) => setRun((current) => {
+  const resolveChallenge = (option: EventOption, outcome?: boolean) => setRun((current) => {
     if (!current || current.status !== 'running' || !option.success) return current
     const { odds } = challengeOdds(option.success, option.label, res(current), court(current))
     const nextCount = current.eventCount + 1
-    if (Math.random() >= odds) {
+    if (outcome === undefined ? Math.random() >= odds : !outcome) {
       const { res: after, message } = challengeSetback(res(current), court(current))
       const elapsed = current.elapsed + 40
       const base: Run = { ...current, ...after, eventCount: nextCount, elapsed: Math.min(TIME_LIMIT, elapsed),
         event: nextCount >= 21 ? FINAL_EVENT : current.deck[current.cursor] ?? current.deck[0],
         cursor: nextCount >= 21 ? current.cursor : current.cursor + 1,
         crisis: message, log: [`${current.event.title}：${message}`, ...current.log].slice(0, 5) }
-      const doomed = suddenEnding(base, 0.08)
+      const doomed = outcome === undefined || base.destiny <= 0 ? suddenEnding(base, 0.08) : base
       if (doomed.status !== 'running') return doomed
       if (elapsed >= TIME_LIMIT) return { ...base, status: 'defeat', endTitle: '时局已失', reign: '无号', ending: '这一败耗尽了最后的时间，旧朝趁势收拢了天下。' }
       return base
@@ -240,17 +245,17 @@ export default function App() {
       cursor: nextCount >= 21 ? current.cursor : current.cursor + 1,
       city: reward.city ?? current.city, cities, crisis,
       log: [`${current.event.title}：挑战成功，${option.label}`, ...current.log].slice(0, 5) }
-    const doomed = suddenEnding(base)
+    const doomed = outcome === undefined || base.destiny <= 0 ? suddenEnding(base) : base
     if (doomed.status !== 'running') return doomed
     return base
   })
   if (!run) {
     const locked = nextLocked(meta)
     return <main className="dynasty-app lobby-screen">
-      <div className="lobby-seal">鼎</div>
+      <header className="lobby-hero"><div className="lobby-seal">鼎</div>
       <p className="eyebrow">明末 · 天命肉鸽</p>
       <h1>鼎革：<span>王朝崛起</span></h1>
-      <p className="subtitle">天下大乱，旧朝将倾。你选一位君王的魂魄降临末世，八分钟内写下新王朝的第一章。</p>
+      <p className="subtitle">天下大乱，旧朝将倾。你选一位君王的魂魄降临末世，以文字抉择运筹帷幄，或亲自走进天下施政、统兵与交涉，写下新王朝的第一章。</p></header><PlayGuide />
 
       <section className="monarch-roster">
         <p className="eyebrow">选择君王　{meta.unlocked.length === MONARCHS.length ? '诸王皆已归位' : '仍有君王沉睡'}</p>
@@ -261,9 +266,11 @@ export default function App() {
               key={m.name}
               className={`monarch-pick${monarch.name === m.name ? ' selected' : ''}${open ? '' : ' locked'}`}
               style={open ? { borderColor: m.color } : undefined}
+              aria-label={`${m.name} · ${m.epithet}${open ? "" : " · 尚未解锁"}`}
+              aria-pressed={monarch.name === m.name}
               disabled={!open}
               onClick={() => setMonarch(m)}
-            >{open ? m.name : '🔒'}</button>
+            ><span className="monarch-emblem" aria-hidden="true">{open ? m.epithet.slice(0, 1) : "封"}</span><strong>{m.name}</strong><small>{open ? m.trait : "尚未解锁"}</small></button>
           })}
         </div>
         {locked && <p className="fine-print">下一位待解锁：<b>{locked}</b> —— 继续建立新朝，沉睡的魂魄会回应。</p>}
@@ -279,16 +286,25 @@ export default function App() {
         </div>
       </section>
 
-      <button className="start-btn" onClick={startRun}>开始鼎革 <span>→</span></button>
+      <GameModes onStart={startRun} />
       <p className="fine-print">
         每一局的事件都会被四柱与朝堂关系重新改写 · 人才、军制与姻亲会持续影响王朝走向
         {meta.reigns.length > 0 && <> · 已收录国号：{meta.reigns.join('、')}</>}
       </p>
     </main>
   }
-  if (run.status === 'running' && run.event.id.startsWith('challenge-')) return <main className="dynasty-app lobby-screen challenge-screen"><p className="eyebrow">{run.event.source}</p><EventIllustration event={run.event} /><h1>{run.event.title}</h1><p className="subtitle">{run.event.body}</p><section className="challenge-options">{run.event.options.map((option) => { const o = challengeOdds(option.success ?? 0.5, option.label, res(run), court(run)); return <button key={option.label} className="choice" onClick={() => resolveChallenge(option)}><strong>{option.label}</strong><span>{describeEffect(option.reward ?? option.effect, run.event.phase)} · {o.hint}</span></button> })}</section><p className="fine-print">军势、朝局、国库与天命会共同改变挑战走向；失利会留下真实伤痕。</p></main>
+  // Each lobby button starts its own mode; chronicle keeps its original choice resolution.
+  if (gameMode === 'world') return <DynastyWorld
+    event={run.event} turn={run.eventCount} monarch={run.monarch.name} resources={res(run)} log={run.log}
+    active={run.monarch.active} activeUsed={run.activeUsed} onActive={useActive}
+    onResolve={(option, success) => run.event.id.startsWith('challenge-') ? resolveChallenge(option, success) : choose(option, success)}
+    ending={run.status === 'running' ? undefined : { title: run.endTitle ?? '天命未成', text: run.ending ?? '', victory: run.status === 'victory', unlocked: run.unlockedName }}
+    onExit={() => setRun(null)}
+  />
+
+  if (run.status === 'running' && run.event.id.startsWith('challenge-')) return <main className="dynasty-app lobby-screen challenge-screen"><p className="eyebrow">{run.event.source}</p><EventIllustration event={run.event} /><h1>{run.event.title}</h1><p className="subtitle">{run.event.body}</p><PlayGuide compact /><section className="challenge-options">{run.event.options.map((option) => { const o = challengeOdds(option.success ?? 0.5, option.label, res(run), court(run)); return <button key={option.label} className="choice" onClick={() => resolveChallenge(option)}><strong>{option.label}</strong><span>{describeEffect(option.reward ?? option.effect, run.event.phase)} · {o.hint}</span></button> })}</section><p className="fine-print">军势、朝局、国库与天命会共同改变挑战走向；失利会留下真实伤痕。</p></main>
   const phase = phaseFor(run.eventCount)
-  return <main className="dynasty-app"><header className="topbar"><div><p className="eyebrow">{run.monarch.name} · {run.monarch.epithet}</p><h1>鼎革：<span>王朝崛起</span></h1></div><div className={`timer ${run.elapsed > TIME_LIMIT * 0.75 ? 'urgent' : ''}`} title="时局越往后越紧，天命也可能在任何一刻断裂"><b>{timeWord(run.elapsed)}</b><small>时局脉动</small></div></header><section className="dashboard"><div className="phase-track">{PHASES.map((item, index) => <div key={item} className={`phase ${index <= PHASES.indexOf(phase) ? 'active' : ''}`}><span>{['一', '二', '三', '四', '五'][index]}</span>{item}</div>)}</div><div className="stats"><Stat label="军事" value={run.military} icon="⚔" /><Stat label="政治" value={run.politics} icon="⚖" /><Stat label="经济" value={run.economy} icon="🪙" /><Stat label="天命" value={run.destiny} icon="✦" /></div></section><div className="game-grid"><aside className="realm-panel"><p className="eyebrow">你的势力</p><h2>{run.city}</h2><p className="army-name">{run.armyType}</p><div className="map-grid">{CITIES.map((city) => <span key={city} className={run.cities.includes(city) ? 'owned' : ''}>{city}</span>)}</div><div className="roster"><p>人才名录</p><div>{run.talents.length ? run.talents.map((talent) => <span key={talent}>{talent}</span>) : <small>乱世尚未有人投效</small>}</div><p>配偶</p><strong>{isMarried(run.spouse) ? run.spouse : '尚未成家'}</strong></div><div className="boons"><p className="eyebrow">朝堂影响</p>{courtSummary(court(run)).length ? courtSummary(court(run)).map((line) => <span key={line}>{line}</span>) : <small>还没有人为你带来额外的助力</small>}</div></aside><section className="event-column"><div className="event-meta"><span>当幕：{run.event.phase}</span><span>{run.event.source}</span></div><article className="event-card"><EventIllustration event={run.event} /><div className="wax-seal">诏</div><p className="eyebrow">{run.event.phase} · {run.event.source.split(' · ')[0]}</p><h2>{run.event.title}</h2><p className="event-body">{run.event.body}</p><div className="choices">{run.event.options.map((option) => <button key={option.label} className={`choice${option.effect.death ? ' choice-risk' : ''}`} onClick={() => choose(option)}><strong>{option.label}</strong><span>{describeEffect(option.effect, run.event.phase)}</span>{option.effect.death && <em className="risk-tag">☠ 暗藏覆亡之险</em>}</button>)}</div>{!run.activeUsed && <button className="royal-btn" onClick={useActive}>👑 {run.monarch.active}（本局尚未动用）</button>}</article>{run.crisis && <div className="crisis-banner">⚠ {run.crisis}</div>}<div className="chronicle"><p className="eyebrow">起居注</p>{run.log.map((line, index) => <p key={`${line}-${index}`} className={index === 0 ? 'latest' : ''}>{line}</p>)}</div></section></div>{(run.status === 'victory' || run.status === 'defeat') && <div className="result-overlay"><div className={`result-card ${run.status}${run.endTitle === '万世之基' ? ' foundation-ending' : ''}`}><p className="eyebrow">{run.status === 'victory' ? `新朝已立 · ${run.reign ?? ''}` : '天命未成'}</p><h2>{run.endTitle ?? (run.status === 'victory' ? '天下换了姓' : '乱世吞没了你')}</h2><p>{run.ending}</p><div className="result-stats"><span>疆域：{realmQuality(run.cities.length)}</span><span>朝堂：{courtQuality(run.talents.length)}</span><span>天命：{quality(run.destiny)}</span></div>{run.unlockedName && <p className="unlock-note">🔓 解锁新君王：<b>{run.unlockedName}</b></p>}<button className="start-btn" onClick={() => setRun(null)}>再开一局 <span>→</span></button></div></div>}</main>
+  return <main className="dynasty-app"><header className="topbar"><div><p className="eyebrow">{run.monarch.name} · {run.monarch.epithet}</p><h1>鼎革：<span>王朝崛起</span></h1></div><div className={`timer ${run.elapsed > TIME_LIMIT * 0.75 ? 'urgent' : ''}`} title="时局越往后越紧，天命也可能在任何一刻断裂"><b>{timeWord(run.elapsed)}</b><small>抉择推动时局 · 可停下思考</small></div></header><section className="dashboard"><PlayGuide compact /><div className="phase-track">{PHASES.map((item, index) => <div key={item} className={`phase ${index <= PHASES.indexOf(phase) ? 'active' : ''}`}><span>{['一', '二', '三', '四', '五'][index]}</span>{item}</div>)}</div><div className="stats"><Stat label="军事" value={run.military} icon="⚔" /><Stat label="政治" value={run.politics} icon="⚖" /><Stat label="经济" value={run.economy} icon="🪙" /><Stat label="天命" value={run.destiny} icon="✦" /></div></section><div className="game-grid"><aside className="realm-panel"><p className="eyebrow">你的势力</p><h2>{run.city}</h2><p className="army-name">{run.armyType}</p><RealmMap cities={CITIES} owned={run.cities} capital={run.city} /><div className="roster"><p>人才名录</p><div>{run.talents.length ? run.talents.map((talent) => <span key={talent}>{talent}</span>) : <small>乱世尚未有人投效</small>}</div><p>配偶</p><strong>{isMarried(run.spouse) ? run.spouse : '尚未成家'}</strong></div><div className="boons"><p className="eyebrow">朝堂影响</p>{courtSummary(court(run)).length ? courtSummary(court(run)).map((line) => <span key={line}>{line}</span>) : <small>还没有人为你带来额外的助力</small>}</div></aside><section className="event-column"><div className="event-meta"><span>当幕：{run.event.phase} · 已作 {run.eventCount} 次抉择</span><span>{run.event.source}</span></div><article className="event-card"><EventIllustration event={run.event} /><div className="wax-seal">诏</div><p className="eyebrow">{run.event.phase} · {run.event.source.split(' · ')[0]}</p><h2>{run.event.title}</h2><p className="event-body">{run.event.body}</p><div className="choices">{run.event.options.map((option) => <button key={option.label} className={`choice${option.effect.death ? ' choice-risk' : ''}`} onClick={() => choose(option)}><strong>{option.label}</strong><span>{describeEffect(option.effect, run.event.phase)}</span>{option.effect.death && <em className="risk-tag">☠ 暗藏覆亡之险</em>}</button>)}</div>{!run.activeUsed && <button className="royal-btn" onClick={useActive}>👑 {run.monarch.active}（本局尚未动用）</button>}</article>{run.crisis && <div className="crisis-banner">⚠ {run.crisis}</div>}<div className="chronicle"><p className="eyebrow">起居注</p>{run.log.map((line, index) => <p key={`${line}-${index}`} className={index === 0 ? 'latest' : ''}>{line}</p>)}</div></section></div>{(run.status === 'victory' || run.status === 'defeat') && <div className="result-overlay" role="dialog" aria-modal="true" aria-label="本局结局"><div className={`result-card ${run.status}${run.endTitle === '万世之基' ? ' foundation-ending' : ''}`}><p className="eyebrow">{run.status === 'victory' ? `新朝已立 · ${run.reign ?? ''}` : '天命未成'}</p><h2>{run.endTitle ?? (run.status === 'victory' ? '天下换了姓' : '乱世吞没了你')}</h2><p>{run.ending}</p><div className="result-stats"><span>疆域：{realmQuality(run.cities.length)}</span><span>朝堂：{courtQuality(run.talents.length)}</span><span>天命：{quality(run.destiny)}</span></div>{run.unlockedName && <p className="unlock-note">🔓 解锁新君王：<b>{run.unlockedName}</b></p>}<button autoFocus className="start-btn" onClick={() => setRun(null)}>再开一局 <span>→</span></button></div></div>}</main>
 }
 function timeWord(elapsed: number) {
   if (elapsed > TIME_LIMIT * 0.82) return '天命迫近'
@@ -311,7 +327,11 @@ function courtQuality(talents: number) {
   return '贤才云集'
 }
 
-function Stat({ label, value, icon }: { label: string; value: number; icon: string }) { return <div className="stat"><span>{icon}</span><div><strong>{quality(value)}</strong><small>{label}</small></div></div> }
+function Stat({ label, value, icon }: { label: string; value: number; icon: string }) {
+  const state = quality(value)
+  const level = ['危殆', '疲弱', '尚可', '稳健', '鼎盛'].indexOf(state) + 1
+  return <div className={`stat${level <= 2 ? ' stat-warn' : ''}`}><span aria-hidden="true">{icon}</span><div><small>{label}</small><strong>{state}</strong><div className="state-pips" aria-hidden="true">{[1, 2, 3, 4, 5].map(n => <i key={n} className={n <= level ? 'lit' : ''} />)}</div></div></div>
+}
 
 function EventIllustration({ event }: { event: GameEvent }) {
   const src = artForEvent(event.id)
