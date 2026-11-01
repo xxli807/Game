@@ -929,3 +929,13 @@ body {
 }
 .quiz-go:disabled { opacity: 0.45; cursor: default; box-shadow: 0 5px 0 var(--gold-dark); }
 .quiz-summary { color: var(--purple); font-weight: bold; }
+.quiz-boss {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 107, 107, 0.16);
+  border-left: 4px solid #ff6b6b;
+  font-size: clamp(12px, 2.6vw, 14px);
+  font-weight: bold;
+  color: #ffd8d8;
+}

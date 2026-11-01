@@ -13,7 +13,7 @@ const bundle = await build({
   stdin: { contents: "export * from './src/game2/game/quiz'", resolveDir: process.cwd() },
   bundle: true, write: false, format: 'esm', platform: 'node',
 })
-const { QUESTIONS, QuizRunner, TIER_NAMES, QUIZ_INTERVAL, shouldAskNow } = await import('data:text/javascript,' + encodeURIComponent(bundle.outputFiles[0].text))
+const { QUESTIONS, QuizRunner, TIER_NAMES, QUIZ_INTERVAL, BOSS_QUIZ_COUNT, shouldAskNow, shouldGateBoss } = await import('data:text/javascript,' + encodeURIComponent(bundle.outputFiles[0].text))
 
 const ids = new Set()
 for (const q of QUESTIONS) {
@@ -33,6 +33,42 @@ for (let tier = 1; tier <= TIER_NAMES.length; tier++) {
     assert.ok(n >= 4, `第 ${tier} 档 ${subject} 只有 ${n} 题，太少`)
   }
 }
+// 奥赛题型自检：字母重排、藏词、数字母这三类最容易写错，直接按规则验一遍
+const letters = (w) => [...w.toLowerCase().replace(/[^a-z]/g, '')].sort().join('')
+let checkedPuzzles = 0
+for (const q of QUESTIONS) {
+  const scramble = q.prompt.match(/Put these letters in order[^:]*:\s*([a-z ]+)$/i)
+  if (scramble) {
+    const pool = letters(scramble[1])
+    assert.equal(letters(q.choices[q.answer]), pool, `${q.id} 正确答案不是这些字母的重排`)
+    q.choices.forEach((c, i) => {
+      if (i !== q.answer) assert.notEqual(letters(c), pool, `${q.id} 干扰项 "${c}" 也能用这些字母拼出来，题目有两个答案`)
+    })
+    checkedPuzzles++
+  }
+  const hidden = q.prompt.match(/hidden inside "(\w+)"/i)
+  if (hidden) {
+    const host = hidden[1].toLowerCase()
+    assert.ok(host.includes(q.choices[q.answer].toLowerCase()), `${q.id} 正确答案并不藏在 ${host} 里`)
+    q.choices.forEach((c, i) => {
+      if (i !== q.answer) assert.ok(!host.includes(c.toLowerCase()), `${q.id} 干扰项 "${c}" 也藏在 ${host} 里`)
+    })
+    checkedPuzzles++
+  }
+  const count = q.prompt.match(/How many letters are in the word "(\w+)"/i)
+  if (count) {
+    assert.equal(Number(q.choices[q.answer]), count[1].length, `${q.id} 字母数不对`)
+    checkedPuzzles++
+  }
+}
+assert.ok(checkedPuzzles >= 6, `只校验到 ${checkedPuzzles} 道字母类奥赛题，太少`)
+
+// 一局里一个孩子可能答十几道，难题必须比入门题多，否则很快就只剩重复的简单题
+const maths = QUESTIONS.filter((q) => q.subject === 'math')
+const hardMaths = maths.filter((q) => q.tier >= 4).length
+assert.ok(maths.length >= 50, `数学只有 ${maths.length} 题，太少`)
+assert.ok(hardMaths >= maths.length / 2, `第 4 档及以上的数学题只有 ${hardMaths} 道，不够难`)
+assert.ok(TIER_NAMES.length >= 6, '难度档位不足 6 档')
 
 // 全对的孩子应该被一路推到最高档
 const ace = new QuizRunner(1)
@@ -61,7 +97,7 @@ q = mixed.next(); mixed.record(q, (q.answer + 1) % 4)
 assert.equal(mixed.tier, 2, '只错一题不该降档')
 q = mixed.next(); mixed.record(q, (q.answer + 1) % 4)
 assert.equal(mixed.tier, 1, '连错两题应该降一档')
-console.log(`✓ 题库 ${QUESTIONS.length} 题自检通过（${TIER_NAMES.length} 档，数学 + 英语），难度升降正常`)
+console.log(`✓ 题库 ${QUESTIONS.length} 题自检通过（${TIER_NAMES.length} 档，数学 ${maths.length} 题其中 ${hardMaths} 道偏难，${checkedPuzzles} 道字母类奥赛题按规则验算），难度升降正常`)
 
 // 定时提问的规则：到点才问，而且绝不插别的弹窗的队
 const playing = { learnMode: true, status: 'playing', time: QUIZ_INTERVAL, nextAt: QUIZ_INTERVAL, quizOpen: false, storyActive: false }
@@ -75,6 +111,17 @@ for (const status of ['skillselect', 'paused', 'dead', 'victory', 'menu']) {
   assert.equal(shouldAskNow({ ...playing, status }), false, `${status} 状态下不该提问`)
 }
 console.log('✓ 定时提问规则通过：每 3 分钟一题，选技能 / 剧情 / 暂停 / 死亡时都不插队')
+
+// 层主关（第 3/6/9/12 关）开打前要连考一组，而且同一关只拦一次
+const atBoss = { learnMode: true, status: 'playing', bossStage: true, stage: 3, lastGatedStage: 0, quizOpen: false, storyActive: false }
+assert.ok(BOSS_QUIZ_COUNT >= 3, '层主关前应该连考至少 3 道')
+assert.equal(shouldGateBoss(atBoss), true, '进层主关应该拦下来考一组')
+assert.equal(shouldGateBoss({ ...atBoss, lastGatedStage: 3 }), false, '同一个层主关不该拦第二次')
+assert.equal(shouldGateBoss({ ...atBoss, bossStage: false }), false, '普通关不该走层主那一组')
+assert.equal(shouldGateBoss({ ...atBoss, learnMode: false }), false, '普通模式永远不拦')
+assert.equal(shouldGateBoss({ ...atBoss, status: 'skillselect' }), false, '选技能时不插队')
+assert.equal(shouldGateBoss({ ...atBoss, lastGatedStage: 3, stage: 6 }), true, '下一个层主关要重新拦一次')
+console.log(`✓ 层主关规则通过：开打前连考 ${BOSS_QUIZ_COUNT} 道，同一关只拦一次`)
 
 // ---------- 2. 真实界面：开场答题 → 进入游戏 → 奖励生效 ----------
 const browser = await chromium.launch()

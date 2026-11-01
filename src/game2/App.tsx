@@ -7,7 +7,7 @@ import LevelUpModal from './components/LevelUpModal'
 import MetaScreen from './components/MetaScreen'
 import Dialogue from './components/Dialogue'
 import QuizModal from './components/QuizModal'
-import { QuizQuestion, QuizRunner, QUIZ_INTERVAL, shouldAskNow } from './game/quiz'
+import { QuizQuestion, QuizRunner, QUIZ_INTERVAL, BOSS_QUIZ_COUNT, shouldAskNow, shouldGateBoss } from './game/quiz'
 import { audio } from './game/audio'
 import {
   StoryEvent, DEATH_LINES, VICTORY_LINES, randomLine,
@@ -141,10 +141,13 @@ function GameScreen({
 
   // 边玩边学：出题器、当前题目与本局战绩。关掉学习模式时这些全都不会用到。
   const quizRunner = useRef(new QuizRunner())
-  const [quiz, setQuiz] = useState<{ question: QuizQuestion; opening: boolean } | null>(null)
+  type QuizReason = 'opening' | 'timer' | 'boss'
+  const [quiz, setQuiz] = useState<{ question: QuizQuestion; reason: QuizReason; nth: number; total: number } | null>(null)
   const [quizStats, setQuizStats] = useState({ asked: 0, correct: 0, best: 0 })
   const quizOpen = useRef(false)
   const nextQuizAt = useRef(QUIZ_INTERVAL)
+  const pending = useRef(0) // 这一组还剩几道
+  const lastGatedStage = useRef(0)
 
   // Cael's story dialogue: queued events, shown one at a time; the world pauses while one is up.
   const [story, setStory] = useState<StoryEvent | null>(null)
@@ -157,9 +160,10 @@ function GameScreen({
     else { storyActive.current = false; setStory(null); if (!quizOpen.current) engineRef.current?.resume() }
   }
 
-  const askQuiz = () => {
+  const askQuiz = (reason: QuizReason, total: number) => {
     quizOpen.current = true
-    setQuiz({ question: quizRunner.current.next(), opening: quizRunner.current.asked === 0 })
+    pending.current = total
+    setQuiz({ question: quizRunner.current.next(), reason, nth: 1, total })
     engineRef.current?.pause()
   }
 
@@ -172,6 +176,13 @@ function GameScreen({
   }
 
   const closeQuiz = () => {
+    // 一组还没考完就直接换下一道，世界保持暂停。
+    if (pending.current > 1) {
+      pending.current -= 1
+      setQuiz((prev) => prev && { ...prev, question: quizRunner.current.next(), nth: prev.nth + 1 })
+      return
+    }
+    pending.current = 0
     quizOpen.current = false
     setQuiz(null)
     // 从「现在」开始重新计时，而不是从上一次应该出题的时刻——否则暂停久了会连着弹好几道。
@@ -217,7 +228,7 @@ function GameScreen({
 
   // 开场那道题：引擎一建好就提问，答完才真正开始下潜。
   useEffect(() => {
-    if (learnMode) askQuiz()
+    if (learnMode) askQuiz('opening', 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -225,17 +236,16 @@ function GameScreen({
   // 选技能、剧情、已死亡或已暂停的时候都不插队。
   useEffect(() => {
     if (!hud) return
-    if (!shouldAskNow({
-      learnMode,
-      status: hud.status,
-      time: hud.time,
-      nextAt: nextQuizAt.current,
-      quizOpen: quizOpen.current,
-      storyActive: storyActive.current,
-    })) return
-    askQuiz()
+    const common = { learnMode, status: hud.status, quizOpen: quizOpen.current, storyActive: storyActive.current }
+    // 层主关优先：进了第 3/6/9/12 关先考一组，考完才开打。
+    if (shouldGateBoss({ ...common, bossStage: hud.bossStage, stage: hud.stage, lastGatedStage: lastGatedStage.current })) {
+      lastGatedStage.current = hud.stage
+      askQuiz('boss', BOSS_QUIZ_COUNT)
+      return
+    }
+    if (shouldAskNow({ ...common, time: hud.time, nextAt: nextQuizAt.current })) askQuiz('timer', 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hud?.time, hud?.status])
+  }, [hud?.time, hud?.status, hud?.stage, hud?.bossStage])
 
   return (
     <div className="fs-wrap" ref={wrapRef}>
@@ -262,7 +272,9 @@ function GameScreen({
           index={quizStats.asked}
           correctSoFar={quizStats.correct}
           streak={quizRunner.current.streak}
-          opening={quiz.opening}
+          reason={quiz.reason}
+          nth={quiz.nth}
+          total={quiz.total}
           onAnswer={answerQuiz}
           onDone={closeQuiz}
         />
