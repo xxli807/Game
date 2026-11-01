@@ -700,6 +700,22 @@ export class GameEngine {
     else if (this.status === 'paused') this.resume()
   }
 
+  // 边玩边学：答对一道题换一点实在的好处——回血、短暂护盾和一点金币。
+  // 答错不扣任何东西：罚钱会让孩子怕答题，而这个模式是为了让他愿意多答。
+  studyBoon(correct: boolean) {
+    const h = this.hero
+    if (!correct) {
+      this.floatText(h.x, h.y - 50, '再想想就好', '#9775fa', 22)
+      return
+    }
+    h.hp = Math.min(this.stats.maxHp, h.hp + this.stats.maxHp * 0.15)
+    h.shieldT = Math.max(h.shieldT, 3)
+    h.invuln = Math.max(h.invuln, 0.35)
+    this.gold += 20
+    this.floatText(h.x, h.y - 50, '答对了！+15% 生命 · 护盾', '#69db7c', 24)
+    this.emit()
+  }
+
   destroy() {
     cancelAnimationFrame(this.rafId)
     window.removeEventListener('keydown', this.onKeyDown)

@@ -72,6 +72,22 @@ npm run dev:v3    # 调试 v3
 - **全中文**。注意：UI 逻辑不要拿显示文字做判断，用 `HudState.classId` 这类稳定字段
   （之前就因为比较英文职业名而踩过坑）。
 
+## v2 边玩边学（2026-10-31）
+- 大厅有两个入口：原来的「▼ 下潜」照旧，新增「📚 边玩边学」。同一局游戏、同一套数值与存档，
+  只是额外穿插二年级奥数 / 英语选择题——`learnMode` 这个布尔值是两者唯一的区别。
+- 出发前必答一题，之后**每 3 分钟**一题（`QUIZ_INTERVAL`）。题目优先于剧情：开场白会等答完题再播，
+  被盖住期间 `Dialogue` 会卸载，计时器跟着停，答完从这段第一句重放。
+- 题库与出题逻辑都在 `src/game2/game/quiz.ts`，**纯数据 + 纯逻辑，不 import React 与引擎**，
+  所以能脱离浏览器直接回归。60 题 / 5 档（入门→奥赛），每档数学 6 + 英语 6。
+  数学题中文题面配英文对照，英语题英文题面配中文提示。
+- 难度自适应：答对升一档，连错两题降一档；一局之内不重复出题，出完一轮才重来。
+- 奖励只给正向：答对回 15% 生命 + 3 秒护盾 + 20 金币（`engine.ts` 的 `studyBoon`），
+  **答错只讲解、不扣任何东西**——罚钱会让孩子怕答题。
+- 改题库、改间隔、改中断规则后必须跑 `node .claude/skills/verify/v2-learn.mjs`：
+  它校验每题四选项不重复、答案下标合法、每档中英都够量，再用真实界面跑一遍开场答题流程。
+- ⚠️ 答题框是 `position: fixed`：`.game-frame` 有 `overflow: hidden`，手机上不这样会被裁掉大半。
+  给 `.game-frame` 加 transform / filter 会让它重新被裁。
+
 ## v3 连续世界（2026-09-12）
 - 大厅保留两种入口（2026-09-13）：「进入天下」开始原文字抉择模式；「Start Playing」进入 `src/game3/action/World.tsx`。两者共享君王选择与解锁，每局由所点按钮确定玩法。`GameModes.tsx` 是入口组件。
 - 3D 模式在同一张地图巡视、听取事件、执行选项，包含统兵、护送、配送、交涉、颁诏；没有 v2 式大首领结尾。
@@ -105,6 +121,7 @@ npm run dev:v3    # 调试 v3
 npx tsc --noEmit && npm run build
 (python3 -m http.server 8080 --directory dist &)
 node .claude/skills/verify/smoke.mjs           # 三个游戏各开一局，断言控制台零报错
+node .claude/skills/verify/v2-learn.mjs        # v2 边玩边学：题库自检 + 开场答题流程
 node .claude/skills/v3-balance/balance.mjs 45  # v3 数值改动必跑：随机乱选 45 局看胜率
 ```
 这两个脚本是**提交进仓库的常备工具**，不依赖任何 AI 工具，`node` 直接跑就行。

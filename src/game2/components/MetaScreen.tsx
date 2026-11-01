@@ -8,7 +8,7 @@ interface Props {
   onClassChange: (classId: ClassId) => void
   onBuy: (id: string) => void
   lastEarned: number
-  onStart: () => void
+  onStart: (learnMode: boolean) => void
 }
 
 // The Last Ember — the campfire you return to between descents.
@@ -95,7 +95,15 @@ export default function MetaScreen({ meta, classId, onClassChange, onBuy, lastEa
               </button>
             ))}
           </div>
-          <button className="play-btn descend-btn" onClick={onStart}>▼ 下潜</button>
+          {/* 两个入口：原样下潜，或边玩边学——同一局游戏，额外穿插二年级奥数 / 英语题。 */}
+          <div className="start-row">
+            <button className="play-btn descend-btn" onClick={() => onStart(false)}>▼ 下潜</button>
+            <button className="play-btn learn-btn" onClick={() => onStart(true)}>📚 边玩边学</button>
+          </div>
+          <p className="learn-note">
+            出发前答一题，之后每 <b>3 分钟</b>再来一题——数学和英语轮着来，由易到难。
+            答对回血、得护盾和金币；答错只讲解，不扣任何东西。
+          </p>
         </div>
 
         {/* Rekindling Aldermere: permanent upgrades bought with embers */}
