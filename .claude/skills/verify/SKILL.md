@@ -15,6 +15,14 @@ npx tsc --noEmit                                  # 覆盖 src/ 全部三个游�
 npm run build                                     # 内部会再跑一次 tsc，然后构建 v1/v2/v3 + 启动页 + 404
 (python3 -m http.server 8080 --directory dist &)  # 起在 dist 上，不是源码目录
 node .claude/skills/verify/smoke.mjs --shots /tmp/shots
+node .claude/skills/verify/world.mjs              # v3 五种活动、道路、交涉预算与村庄结果
+node .claude/skills/verify/v3-rules.mjs            # v3 天命恢复、立国边界、交涉结算
+node .claude/skills/verify/v3-stories.mjs          # 人物委托触发、分支、记忆与防重复
+node .claude/skills/verify/v3-story-ui.mjs         # 桌面/手机委托流程与 2D 回退
+node .claude/skills/verify/v3-army.mjs             # 两军交锋、军令、胜败与返回主线
+node .claude/skills/verify/v3-melee.mjs            # 手动连击、命中窗口、破盾、招架与反击
+node .claude/skills/verify/v3-battle-ui.mjs         # 桌面、手机横竖屏的战斗按钮与截图
+node .claude/skills/verify/v3-campaign.mjs 1,0.9,0.8 10 # 活动结果进入真实 App 后的整局结算
 pkill -f "http.server 8080"
 ```
 
@@ -52,3 +60,7 @@ pkill -f "http.server 8080"
 gh run watch                                      # 等这次部署跑完
 curl -sI https://xxli807.github.io/Game/v3/ | head -1
 ```
+
+## v3 骨骼角色
+
+`node .claude/skills/verify/v3-animation.mjs` 读取实际 GLB，验证独立骨骼、甲胄蒙皮、刀具绑定、出手前动作、暂停时披风/弓姿不漂移、释放后其他角色仍正常，以及下载失败后的可玩回退。角色、动作、资源释放改动必跑；画面还需用 `v3-battle-ui.mjs` 的截图人工检查。

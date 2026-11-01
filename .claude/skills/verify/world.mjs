@@ -45,16 +45,39 @@ try {
    walk(game.interactionTarget());game.interact();check(game.status==='decision','local event opens')
    check(WorldTest.orderFor(event,0).kind==='assault'&&WorldTest.orderFor(event,1).kind==='relief','same event has distinct option activities')
    begin('relief')
-   for(let i=0;i<3;i++){walk(game.interactionTarget());game.interact();check(game.carrying,'collect supplies');walk(game.interactionTarget());game.interact()}
+   walk(game.interactionTarget());game.interact();check(game.carrying&&game.cargoCount===3,'collect the full relief load once')
+   for(const i of [2,0,1]){
+     game.selectDelivery(i);walk(game.interactionTarget());game.interact()
+     check(game.completed.has(i),'deliver in the selected non-default order')
+     check(game.cargoCount===3-game.completed.size,'cargo decrements only when delivered')
+     const count=game.orderProgress;game.interact();check(game.orderProgress===count,'cannot deliver twice to the same home')
+   }
+   check(!game.carrying&&game.cargoCount===0,'cargo clears when the last household receives aid')
    check(game.status==='orderdone'&&game.orderSuccess,'relief delivers all three parcels')
+   const recipient=game.village.people.find(p=>p.memory)
+   check(recipient&&game.village.talk(recipient,game).includes(recipient.memory.line),'a helped household remembers the delivery when spoken to')
    check(game.village.legacy.filter(l=>l.kind==='aid').length===3&&game.village.legacy.some(l=>l.kind==='kitchen'),'relief leaves supplies at each door and a kitchen in town')
    const position={x:game.player.x,y:game.player.y};game.setEvent({...event,id:'oath'})
    check(game.player.x===position.x&&game.player.y===position.y,'new event preserves world position')
    begin('council')
-   for(let i=0;i<3;i++){walk(game.interactionTarget());game.interact();check(game.status==='audience','local audience');game.answerAudience(i!==1)}
+   for(let i=0;i<3;i++){walk(game.interactionTarget());game.interact();check(game.status==='audience','local audience');game.answerAudience(i===1?'defer':'concede')}
    check(game.orderSuccess&&game.status==='orderdone','two supporters pass council')
+   check(game.councilSpent===2&&game.councilBudget()===0,'funded promises consume the limited budget')
+   begin('council');check(game.councilSpent===0,'a new order clears previously settled promises')
+   for(let i=0;i<2;i++){walk(game.interactionTarget());game.interact();game.answerAudience('concede')}
+   walk(game.interactionTarget());game.interact();game.answerAudience('concede')
+   check(game.status==='audience'&&game.orderProgress===2&&game.councilSpent===2,'cannot promise more than the available funds')
+   game.answerAudience('defer');check(game.orderSuccess,'two supporters suffice without a third payment')
+   game.setRealm({military:60,politics:60,economy:60,destiny:50});begin('council')
+   for(let i=0;i<3;i++){walk(game.interactionTarget());game.interact();game.answerAudience('appeal')}
+   check(game.orderSuccess&&game.trust===3&&game.councilSpent===0,'strong institutions earn support without extra funds')
+   game.setRealm({military:30,politics:30,economy:3,destiny:50});begin('council')
+   walk(game.interactionTarget());game.interact();game.answerAudience('concede')
+   check(game.status==='audience'&&game.orderProgress===0&&game.councilSpent===0,'an empty treasury cannot fund a promise')
+   game.answerAudience('appeal');check(game.trust===0,'unsupported appeals do not silently win support')
+   game.setRealm({military:50,politics:50,economy:50,destiny:50})
    begin('council')
-   for(let i=0;i<3;i++){walk(game.interactionTarget());game.interact();game.answerAudience(false)}
+   for(let i=0;i<3;i++){walk(game.interactionTarget());game.interact();game.answerAudience('defer')}
    check(!game.orderSuccess&&game.status==='orderdone','failed negotiation produces failure')
    check(game.village.legacy.some(l=>l.kind==='protest')&&game.village.people.some(p=>p.role==='protester'),'failed council leaves protesters at court')
    begin('ceremony');walk(game.interactionTarget());game.interact();walk(game.interactionTarget())
@@ -67,7 +90,7 @@ try {
    while(game.enemies.length&&game.status==='playing'&&attempts++<16000){
      const target=game.enemies.reduce((a,b)=>Math.hypot(a.x-game.player.x,a.y-game.player.y)<Math.hypot(b.x-game.player.x,b.y-game.player.y)?a:b)
      const dx=target.x-game.player.x,dy=target.y-game.player.y,d=Math.hypot(dx,dy)
-     game.setStick(d>70?dx/d:0,d>70?dy/d:0);game.cast('storm');game.cast('volley');step(.02)
+     game.setStick(d>70?dx/d:0,d>70?dy/d:0);game.setAttack(true);game.cast('storm');game.cast('volley');step(.02)
    }
    check(!game.enemies.length,'combat clears garrison');walk({x:450,y:330});step(3.2)
    check(game.orderSuccess&&game.status==='orderdone','garrison captured without a boss')
@@ -78,7 +101,7 @@ try {
    while(game.status==='playing'&&attempts++<16000){
      const target=game.enemies[0]??game.wagon
      const dx=target.x-game.player.x,dy=target.y-game.player.y,d=Math.max(1,Math.hypot(dx,dy))
-     game.setStick(d>50?dx/d:0,d>50?dy/d:0);game.cast('storm');game.cast('volley');step(.02)
+     game.setStick(d>50?dx/d:0,d>50?dy/d:0);game.setAttack(true);game.cast('storm');game.cast('volley');step(.02)
      if(WorldTest.blocked(game.wagon,22)) offRoad++
    }
    check(game.orderSuccess&&game.status==='orderdone','convoy reaches town')
@@ -93,6 +116,21 @@ try {
    game.setRealm({military:90,politics:50,economy:90,destiny:90});const rich=game.village.people.filter(p=>p.role==='merchant').length
    game.setRealm({military:5,politics:50,economy:5,destiny:5});const poor=game.village.people.filter(p=>p.role==='merchant').length
    check(rich===5&&poor===1,'economy opens and closes market stalls')
+   const originalEvent=game.event, originalTurn=game.turn, storiesBefore=game.stories.all().length
+   game.trackContact('qiao');walk(game.interactionTarget());game.interact()
+   check(game.status==='story'&&game.snapshot().story.id==='qiao','a named character offers a follow-up in the same village')
+   game.closeStory();check(game.status==='playing'&&game.stories.offer('qiao',game.turn),'deferring a request preserves it')
+   game.interact();game.beginStory('school')
+   check(game.order.cargo==='义学物资'&&game.stories.active==='qiao','the branch starts a real delivery activity')
+   walk(game.interactionTarget());game.interact()
+   for(const i of [1,2,0]){game.selectDelivery(i);walk(game.interactionTarget());game.interact()}
+   check(game.status==='orderdone'&&game.orderSuccess&&game.stories.current.result.includes('义学'),'the physical mission completes the chosen story')
+   check(game.village.legacy.some(l=>l.kind==='school'),'the school remains in the world')
+   game.finishStory();game.finishStory()
+   check(game.status==='playing'&&!game.order&&game.event===originalEvent&&game.turn===originalTurn,'side-story settlement preserves the pending dynasty event and is idempotent')
+   check(game.stories.all().length===storiesBefore&&!game.stories.offer('qiao',game.turn),'side missions cannot generate an infinite chain or repeat rewards')
+   game.trackContact('qiao');walk(game.interactionTarget());game.interact()
+   check(game.status==='playing'&&game.notice.includes('义学'),'the recurring character remembers the selected branch')
    game.destroy();canvas.remove()
    return 'PASS: 3D renderer, movement, camera-relative input, solid buildings, pause, proximity, distinct choices, relief, council success/failure, ritual, garrison combat, escort on roads, defeat, continuous position, lasting village changes, villager talk, realm-driven market'
  })

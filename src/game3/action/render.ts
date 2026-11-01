@@ -11,6 +11,7 @@ export class BattleRenderer {
   private height = 640
   private reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   constructor(private canvas: HTMLCanvasElement) {
+    canvas.dataset.renderer = '2d'
     this.ctx = canvas.getContext('2d')!
     this.terrain.src = 'arts/v3-ui/battlefield.jpg'
     this.hero.src = 'arts/v3-ui/general.png'
@@ -67,6 +68,10 @@ export class BattleRenderer {
       this.civilian(envoy.x, envoy.y, ['#608f90', '#a79b64', '#985e48'][index], game.seconds)
       this.text(['文官', '乡老', '军官'][index], envoy.x, envoy.y - 59, '#ecddba', 12)
     }
+    for (const person of game.village.people) if (person.contactId) {
+      this.civilian(person.x, person.y, person.tint, person.step)
+      this.text(`${person.name}${game.stories.offer(person.contactId, game.turn) ? ' · 有事相托' : ''}`, person.x, person.y - 62, '#d6edbf', 13)
+    }
     for (let i = 0; i < 10; i++) {
       const x = 800 + i * 32 + Math.sin(game.seconds * .25 + i) * 38, y = 700 + (i % 3) * 100 + Math.cos(game.seconds * .2 + i) * 32
       this.civilian(x, y, ['#9c875e', '#647c70', '#916f61'][i % 3], game.seconds * 2 + i)
@@ -89,6 +94,7 @@ export class BattleRenderer {
     c.save(); c.strokeStyle = '#ffe1a0'; c.lineWidth = 3; c.setLineDash([5, 5])
     c.beginPath(); c.ellipse(interaction.x, interaction.y + 12, 41 + Math.sin(game.seconds * 3) * 3, 19, 0, 0, Math.PI * 2); c.stroke(); c.restore()
     if (distance(game.player, interaction) < 105 && game.order?.kind !== 'assault') this.text('E · 交互', interaction.x, interaction.y - 105, '#fff5d4', 15)
+    for (const ally of game.allies) { this.soldier(ally, game, true); this.text('我军', ally.x, ally.y - 80, '#99e1d3', 11) }
     for (const enemy of game.enemies) if (enemy.windup > 0) {
       c.strokeStyle = '#ffb68d'; c.fillStyle = 'rgba(193,58,35,.3)'; c.lineWidth = 2
       if (enemy.kind === 'archer') {
@@ -193,13 +199,13 @@ export class BattleRenderer {
   private text(text: string, x: number, y: number, color: string, size: number) {
     const c = this.ctx; c.font = `600 ${size}px "Songti SC", serif`; c.textAlign = 'center'; c.lineJoin = 'round'; c.lineWidth = 4; c.strokeStyle = '#17261ee0'; c.strokeText(text, x, y); c.fillStyle = color; c.fillText(text, x, y)
   }
-  private soldier(e: Enemy, game: DynastyBattle) {
+  private soldier(e: Enemy, game: DynastyBattle, friendly = false) {
     const c = this.ctx, s = e.kind === 'brute' ? 1.25 : 1
     this.shadow(e.x, e.y + 7, 19 * s)
     c.save(); c.translate(e.x, e.y); c.scale(e.x < game.player.x ? s : -s, s)
     const step = Math.sin(e.step) * 4
     c.fillStyle = '#262c27'; c.fillRect(-10, -2 + step, 8, 17); c.fillRect(3, -2 - step, 8, 17)
-    c.fillStyle = e.flash > 0 ? '#f4dfad' : e.kind === 'archer' ? '#847251' : '#764641'
+    c.fillStyle = e.flash > 0 ? '#f4dfad' : friendly ? '#397e78' : e.kind === 'archer' ? '#847251' : '#764641'
     c.beginPath(); c.moveTo(-16, -30); c.lineTo(13, -30); c.lineTo(18, 5); c.lineTo(-19, 5); c.fill()
     c.fillStyle = e.flash > 0 ? '#fff7ce' : '#48514c'; c.fillRect(-11, -32, 23, 27)
     c.strokeStyle = '#a6a08a'; c.lineWidth = 1

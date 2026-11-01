@@ -1,5 +1,9 @@
 # Game3 UI artwork, September 2026
 
+## Gameplay follow-up · 2026-10-03
+
+[The playability pass](game3-playability.md) implements event-specific negotiations with funded promises, relief route selection, household reactions and memory, a founding checklist and sourced historical notes. It also revises text-mode setbacks and challenge odds. On October 4, three named villagers gained outcome-driven playable follow-ups, contact tracking and remembered branches. These are gameplay changes using the current 3D assets; the earlier material-generation record below remains unchanged. Longer story chains and save/resume remain future work.
+
 ## Current entry points: text and 3D (2026-09-13)
 
 The lobby now offers two equal, clearly described modes after ruler selection:
@@ -104,3 +108,17 @@ Building atlas prompt:
 Terrain atlas prompt:
 
 > Use case: stylized-concept. Asset type: production terrain albedo texture atlas for an original 3D Chinese dynasty village game. Exactly two equal square swatches side by side, full image 2:1 landscape, dividing boundary exactly at midpoint. LEFT half: realistic short patchy dry olive green grass, tiny blades, a little exposed dusty soil, fine fallen organic matter, no large plants. RIGHT half: realistic compacted dusty grey brown earth of an ancient village footpath, mottled fine grit, occasional very small gravel, subtle wear; no grass. Orthographic straight-down scan, even flat diffuse light, no perspective or baked shadows. Restrained earthy colors, realistic game material detail at ground level. Each half should tile naturally on its own, no large distinctive features, no path outline, no borders, labels, text, objects, people or UI.
+
+### Battlefield revision · 2026-10-05
+
+The playable battle now uses `action/warriors3d.ts`: original human-proportion soldiers with articulated knees/elbows, segmented armour, long spears, tall shields, bows/quivers and a commander saber. `battleDust.ts` adds instanced low dust; the renderer adds shaped arrows, thinner trails, softer shadows and battle framing. These are live geometry/animation changes, not new background illustrations. Manual J strikes, K guards/parries and third-hit shield breaks are wired into the visuals; touch controls and stamina are in `CombatControls.tsx`. See `game3-playability.md` for verification, historical-reference links and the limits of this procedural art pass.
+
+### Authored characters and close combat · 2026-10-07
+
+The active 3D battle now loads a real skinned humanoid with authored full-body animation, replacing the segmented procedural warrior when the asset is available. `animatedHumans.ts` handles independent skeletons and blending; `humanEquipment.ts` fits original lamellar armour, helmets, shields, spears, bows and the commander's saber. A red cloth cape makes the commander readable among the soldiers. Armour is skinned and batched by material across limbs. Reflected environment light restores metal detail.
+
+The 2.9 MB `public/arts/v3-models/warrior-base.glb` packages the free CC0 Quaternius Standard base character and selected clips from Universal Animation Libraries 1/2. Provenance and the original license notices live beside it. Raw archives stay in ignored `art-source/`; `scripts/assets/prepare-v3-warrior.py` reproduces the runtime asset. No paid files or new dependencies are required.
+
+Combat opens in a closer third-person shoulder view; V switches to the existing overhead view. Camera collision stops the view passing through buildings. The sortie spawn and banners leave the commander unobstructed. Left-click swings, holding right-click guards, dragging or Z/C rotates. J/K and touch buttons remain available. Soldier anticipation begins during the attack warning, the third sword contact uses a longer wind-up, and paused skeletal/cloak animation freezes.
+
+This is still a stylized Chinese historical interpretation, not photorealism or a period-exact reconstructed uniform. The free base has stylized proportions; bow aiming and some infantry motion are adapted rather than bespoke weapon animations. The existing procedural characters remain a playable download-failure fallback. Text play and both other games retain their own rendering.

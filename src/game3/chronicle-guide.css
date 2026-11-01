@@ -1,0 +1,18 @@
+.founding-goal { border: 1px solid #ad956d; background: #f3e8d0; padding: 14px 18px; margin: 12px 0 18px; color: #493b28; text-align: left; font-size: .82rem; }
+.founding-goal > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.founding-goal ul { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 12px 0; list-style: none; }
+.founding-goal li { padding: 4px 9px; border: 1px solid #b4a58b; color: #75654c; }
+.founding-goal li.ready { background: #dae5d2; border-color: #647d5e; color: #304d30; }
+.founding-goal p { line-height: 1.7; margin: 0; }
+.founding-goal .mandate-warning { margin-top: 12px; padding: 10px; border-left: 3px solid #a0382c; color: #782820; background: #f1d6bf; }
+.historical-context { margin: 16px 0; padding: 10px 14px; border-left: 2px solid #aa8352; background: #e7d5b640; color: #62492e; text-align: left; font-size: .82rem; }
+.historical-context summary { cursor: pointer; min-height: 32px; line-height: 1.8; }
+.historical-context p { margin: 8px 0; line-height: 1.8; }
+.historical-context small, .historical-context a { display: block; margin-top: 8px; line-height: 1.6; }
+.historical-context a { color: inherit; text-underline-offset: 3px; }
+.challenge-screen > .founding-goal, .challenge-screen > .historical-context { width: min(760px, 100%); }
+.dynasty-world .founding-goal { background: #20342b; border-color: #8c8058; color: #eee1c1; }
+.dynasty-world .founding-goal li { color: #d6c8ab; }
+.dynasty-world .founding-goal li.ready { color: #def0cf; background: #38523c; }
+.dynasty-world .historical-context { color: #e8d8b3; background: #d0b3780d; }
+.dynasty-world .founding-goal p, .dynasty-world .historical-context p { font-size: 13px; }

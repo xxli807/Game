@@ -1,3 +1,4 @@
+import { CONTACTS, type ContactId } from './stories'
 import { quality, Resources } from '../rules'
 import { Order, PLACES, WorldEvent } from './orders'
 import { distance, Vec } from './model'
@@ -7,7 +8,7 @@ import { ENVOYS, HOMES, ROAD_NODES, STALLS, convoyRoute, freeSpot, moveWithColli
 // what they say, and what stays standing after an order is carried out. Purely derived from engine state.
 export type Role = 'farmer' | 'elder' | 'child' | 'merchant' | 'guard' | 'settler' | 'official' | 'protester'
 export type Mood = 'calm' | 'afraid' | 'cheer' | 'watch'
-export type Villager = Vec & { id: number; role: Role; tint: string; home: Vec; goal: Vec; node: number; post?: Vec; speed: number; step: number; heading: number; wait: number; stuck: number; mood: Mood; talk: number; line: string; moving: boolean; dest?: Vec; path: Vec[] }
+export type Villager = Vec & { id: number; role: Role; tint: string; home: Vec; goal: Vec; node: number; post?: Vec; speed: number; step: number; heading: number; wait: number; stuck: number; mood: Mood; talk: number; line: string; moving: boolean; dest?: Vec; path: Vec[]; contactId?: ContactId; name?: string; memory?: { line: string; heard: boolean } }
 export type LegacyKind = 'garrison' | 'scorched' | 'supplies' | 'wreck' | 'settlers' | 'clinic' | 'rampart' | 'school' | 'treasury' | 'kitchen' | 'aid' | 'pavilion' | 'protest' | 'stele'
 export type Legacy = Vec & { id: number; kind: LegacyKind; title: string; count: number }
 export type Realm = Record<keyof Resources, number>
@@ -49,6 +50,12 @@ const WORLD_CHANGE: Record<LegacyKind, string> = {
   aid: '门口放下了物资，屋里的灯重新亮了。', pavilion: '行宫前添了一座议事亭，属吏在此听讼。',
   protest: '行宫前聚起了请愿的百姓，他们不肯散去。', stele: '祭坛旁立起新碑，刻着你颁下的诏令。',
 }
+const DELIVERY_REACTIONS: Record<string, string> = {
+  '药材': '药送到了！家里的病人终于有盼头了。',
+  '义学物资': '书和纸都有了，孩子明日就能去念书。',
+  '款项': '这笔钱够先把铺子开起来，谢大人周全。',
+  '修墙木料': '木料齐了，大伙搭把手，今晚就把缺口补上！',
+}
 
 export class Village {
   people: Villager[] = []
@@ -58,7 +65,15 @@ export class Village {
   private legacyId = 0
   private cheer = 0
   private seed = 20260912
-  constructor() { this.populate() }
+  constructor() {
+    this.populate()
+    for (const contact of CONTACTS) {
+      this.add(contact.id === 'wan' ? 'elder' : 'farmer', 0)
+      const person = this.people[this.people.length - 1], at = freeSpot(contact.at, 12)
+      Object.assign(person, at, { contactId: contact.id, name: `${contact.name} · ${contact.title}`, post: at, home: at, goal: at, memory: { line: contact.intro, heard: false } })
+      person.tint = { qiao: '#997747', an: '#685a83', wan: '#668976' }[contact.id]
+    }
+  }
   private random() { this.seed = this.seed * 16807 % 2147483647; return this.seed / 2147483647 }
   private pick<T>(list: T[]) { return list[Math.floor(this.random() * list.length)] }
   setRealm(res: Resources) {
@@ -75,7 +90,7 @@ export class Village {
       settler: Math.min(6, this.count('settlers') * 2), official: Math.min(4, this.count('pavilion')), protester: Math.min(6, this.count('protest') * 3),
     }
     for (const role of Object.keys(want) as Role[]) {
-      const current = this.people.filter(p => p.role === role)
+      const current = this.people.filter(p => p.role === role && !p.contactId)
       for (const extra of current.slice(want[role])) this.people.splice(this.people.indexOf(extra), 1)
       for (let i = current.length; i < want[role]; i++) this.add(role, i)
     }
@@ -96,7 +111,12 @@ export class Village {
     if (!door) return
     if (order.cargo === '修墙木料') this.place('rampart', order.cargo, { x: door.x, y: door.y - 45 })
     else this.place('aid', order.cargo ?? '救济物资', { x: door.x + 48, y: door.y - 18 })
-    for (const v of this.people) if (distance(v.home, door) < 5 || distance(v, door) < 120) { v.mood = 'cheer'; v.wait = 2.5 }
+    const recipients = this.people.filter(v => distance(v.home, door) < 5 || distance(v, door) < 120)
+    const line = DELIVERY_REACTIONS[order.cargo ?? ''] ?? '粮送到家门口了，今夜总算能让孩子吃饱。'
+    for (const v of recipients) { v.mood = 'cheer'; v.wait = 2.5; v.memory = { line, heard: false } }
+    // One nearby household speaks immediately; others remember the aid when approached later.
+    const speaker = recipients.filter(v => distance(v, door) < 150).sort((a, b) => distance(a, door) - distance(b, door))[0]
+    if (speaker) { speaker.line = line; speaker.talk = 4.5 }
   }
   // Returns one sentence describing what changed, so the HUD can point the player at it.
   record(order: Order, event: WorldEvent | null, success: boolean, wagon: Vec): string {
@@ -113,6 +133,11 @@ export class Village {
     this.populate()
     return WORLD_CHANGE[kind]
   }
+  rememberContact(id: ContactId, line: string) {
+    const person = this.people.find(p => p.contactId === id)
+    if (person) person.memory = { line, heard: false }
+  }
+  recoverGoods(title: string) { this.place('supplies', title); this.populate() }
   private place(kind: LegacyKind, title: string, at?: Vec) {
     const slots = SLOTS[kind], used = this.legacy.filter(l => l.kind === kind)
     const spot = at ?? slots[used.length % Math.max(1, slots.length)]
@@ -180,6 +205,10 @@ export class Village {
   }
   talk(v: Villager, world: WorldState, carryName?: string): string {
     v.talk = 3.2
+    if (!world.enemies.length && v.memory && !v.memory.heard) {
+      v.memory.heard = true; v.line = v.memory.line
+      return `${v.name ?? ROLE_NAMES[v.role]}：「${v.line}」`
+    }
     const lines: string[] = []
     if (v.role === 'protester') lines.push('衙门说一套做一套，我们要个说法！', '话说得好听，可我们没见到半点好处。', '不给个交代，我们就不走。')
     else if (world.enemies.length) lines.push('快躲起来！那边打起来了！', '大人小心，贼兵就在前面！', '我家门都闩上了，您可千万要赢啊。')
@@ -197,6 +226,7 @@ export class Village {
       protest: '行宫前那些人还没散呢，衙门得给个说法。', stele: `碑上刻着「${recent.find(l => l.kind === 'stele')?.title ?? '新诏'}」，识字的人念给大家听。`,
     }
     for (const item of recent) lines.push(memory[item.kind])
+    if (v.memory) lines.push(v.memory.line)
     if (this.realm.economy <= 2) lines.push('米价又涨了，集市上一半铺子都关着。')
     if (this.realm.economy >= 4) lines.push('集市热闹得很，外乡的货都往这儿来。')
     if (this.realm.military <= 2) lines.push('巡逻的兵越来越少，晚上都不敢出门。')
@@ -206,6 +236,6 @@ export class Village {
     if (this.realm.destiny >= 4) lines.push('这几日天光正好，都说是新朝的吉兆。')
     if (!lines.length) lines.push(v.role === 'child' ? '您就是那位要改天换地的人吗？' : v.role === 'guard' ? '属下巡到这边，一切安好。' : '日子总得往下过，您说是不是？')
     v.line = this.pick(lines)
-    return `${ROLE_NAMES[v.role]}：「${v.line}」`
+    return `${v.name ?? ROLE_NAMES[v.role]}：「${v.line}」`
   }
 }

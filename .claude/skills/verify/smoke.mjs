@@ -58,12 +58,16 @@ for (const game of GAMES) {
       notes.push('文字模式：阅读与抉择正常')
     } else if (game.kind === 'world') {
       await page.waitForSelector('.world-canvas')
-      // Headless Chromium renders WebGL on the CPU (~8 fps), so hold the key long enough for several frames.
+      // Wait for actual movement: CPU WebGL shader compilation can consume a
+      // fixed key-hold window before the first animated-character frames render.
       if (await page.getAttribute('.world-canvas', 'data-renderer') !== '3d') throw new Error('3D renderer did not start (WebGL2 unavailable?)')
       const player = page.locator('.world-map svg > circle')
       const before = Number(await player.getAttribute('cx'))
       await page.locator('.world-canvas').focus()
-      await page.keyboard.down('d'); await page.waitForTimeout(1500); await page.keyboard.up('d')
+      await page.keyboard.down('d')
+      try {
+        await page.waitForFunction(start => Number(document.querySelector('.world-map svg > circle')?.getAttribute('cx')) > start + 30, before, { timeout: 15000 })
+      } finally { await page.keyboard.up('d') }
       const after = Number(await player.getAttribute('cx'))
       if (after <= before + 30) throw new Error('World movement did not advance the player')
       await page.keyboard.press('Escape')

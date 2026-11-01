@@ -22,6 +22,12 @@
 .order-dots { display: flex; gap: 5px; margin-top: 12px; }
 .order-dots i { width: 25px; height: 4px; background: #778271; }
 .order-dots .done { background: #e6c78d; }
+.delivery-route { pointer-events: auto; margin-top: 8px; font-size: 12px; }
+.delivery-route summary { cursor: pointer; min-height: 36px; padding: 8px 0; color: #f1d79c; }
+.delivery-route > div { display: flex; gap: 5px; }
+.delivery-route button { flex: 1; padding: 7px 3px; min-width: 0; font-size: 11px; }
+.delivery-route button[aria-pressed="true"] { border-color: #f1d79c; background: #665432; }
+.world-objective .delivery-route small { display: block; margin-top: 6px; letter-spacing: 0; line-height: 1.6; }
 .world-map { position: absolute; top: 110px; right: 24px; width: 175px; background: #182a23eb; border: 1px solid #bca37380; padding: 7px; box-shadow: 0 10px 20px #0003; }
 .world-map svg { width: 100%; display: block; }
 .world-map small { display: block; text-align: center; font-size: 9px; color: #d3c198; padding: 5px 0; }
@@ -115,3 +121,56 @@
 .world-labels .wl-arrow { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: #fff2c7; }
 .world-labels .wl-arrow b { font-size: 22px; color: #f1d69c; line-height: 1; }
 .world-dialog .world-change { color: #f0d49a; border-left: 2px solid #bea06a; padding-left: 12px; }
+.world-dialog .council-readout { color: #f0d49a; padding: 10px 12px; background: #bba26a12; border: 1px solid #bba26a55; font-size: 13px; line-height: 1.6; }
+.village-contacts { pointer-events: auto; margin-top: 10px; padding-top: 8px; border-top: 1px solid #a18b5e66; font-size: 12px; }
+.village-contacts summary { cursor: pointer; color: #d9c18e; min-height: 28px; }
+.village-contacts button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 9px; margin: 5px 0; background: #203d33; border: 1px solid #897a55; color: #f2e5c5; }
+.village-contacts button[aria-pressed="true"] { border-color: #f5d991; background: #375744; }
+.village-contacts button span { font-size: 11px; }
+.world-dialog .story-cause { padding: 10px 12px; border-left: 3px solid #b8d3ad; background: #9ab88314; color: #c5dbb9; }
+.dynasty-world .battle-launch { width: 100%; margin-top: 12px; background: #8a4232; border-color: #e2bf7e; font-weight: 700; }
+.army-controls { margin-top: 12px; padding-top: 10px; border-top: 1px solid #b19b67; }
+.army-controls > div { display: flex; justify-content: space-between; gap: 6px; font-size: 13px; }
+.army-controls b:first-child { color: #9ee7d6; }
+.army-controls b:last-child { color: #ffb29c; }
+.army-controls nav { display: flex; gap: 5px; margin-top: 8px; }
+.dynasty-world .army-controls button { flex: 1; padding: 6px 3px; font-size: 11px; }
+.army-controls button[aria-pressed="true"] { background: #426255; border-color: #e4ca8d; }
+.army-controls kbd { display: block; font-size: 10px; margin-bottom: 4px; }
+.combat-controls { position: absolute; right: 26px; bottom: 125px; display: flex; gap: 8px; width: 164px; flex-wrap: wrap; }
+.combat-controls button { flex: 1; height: 64px; touch-action: none; font-size: 16px; }
+.combat-controls kbd { display: block; font-size: 10px; margin-bottom: 4px; }
+.combat-controls .combat-strike { background: #763b2b; border-color: #c88e60; }
+.guard-stamina { position: relative; width: 100%; height: 23px; background: #1c2523ed; border: 1px solid #b5976655; overflow: hidden; }
+.guard-stamina i { position: absolute; inset: 0 auto 0 0; background: #68725a; transition: width .08s; }
+.guard-stamina span { position: relative; display: block; text-align: center; padding: 4px 0; font-size: 10px; color: #fff2d5; }
+.is-battle .world-objective { width: 270px; background: linear-gradient(90deg, #14251fe8, #14251f33); }
+.is-battle .world-objective h1 { font-size: 18px; }
+.is-battle .world-objective > small, .is-battle .order-dots { display: none; }
+.is-battle .world-notice { max-width: 50%; }
+@media (max-width: 760px) {
+  .combat-controls { right: 12px; bottom: 174px; width: 131px; gap: 7px; }
+  .combat-controls button { min-width: 0; padding: 5px; height: 54px; font-size: 14px; }
+  .is-battle .world-objective { top: 106px; width: calc(100% - 112px); padding: 7px 9px; }
+  .is-battle .world-objective h1 { font-size: 14px; margin: 3px 0; }
+  .is-battle .world-objective > p { font-size: 10px; }
+  .is-battle .army-controls { margin-top: 6px; padding-top: 6px; }
+  .is-battle .army-controls > p { display: none; }
+  .is-battle .army-controls > div { font-size: 11px; }
+  .is-battle .army-controls nav { margin-top: 6px; }
+  .is-battle .army-controls kbd { display: none; }
+  .is-battle .world-map { top: 106px; width: 88px; }
+  .is-battle .world-notice { bottom: 281px; max-width: calc(100% - 24px); padding: 6px 9px; font-size: 10px; }
+}
+@media (max-height: 560px) and (min-width: 600px) {
+  .dynasty-world { min-height: 320px; }
+  .world-actions { display: flex; }
+  .world-actions button { width: 62px; height: 57px; }
+  .combat-controls { bottom: 104px; right: 26px; }
+  .is-battle .world-objective { top: 82px; width: 235px; padding: 7px 9px; }
+  .is-battle .world-objective h1 { font-size: 14px; margin: 3px 0; }
+  .is-battle .army-controls { margin-top: 5px; padding-top: 5px; }
+  .is-battle .army-controls > p, .is-battle .army-controls kbd { display: none; }
+  .is-battle .world-notice { bottom: 96px; min-width: 0; max-width: 40%; font-size: 10px; }
+}
+.wl-hp.ally > i { background: #79cebb; }

@@ -206,6 +206,30 @@ export function militaryOdds(r: Resources, label: string, court?: Court): number
   return Math.max(0.18, Math.min(0.9, odds))
 }
 
+// 世界活动失败：丢掉这次争取的收益，再按当前国势承受一次挫折。
+// 旧实现是固定的 -6/-6/-4，既不看事件大小也不看国力：实测活动成功率 100% 胜率 89%，
+// 90% 掉到 50%，80% 只剩 20%，70% 全败——失手两次这一局基本就结束了。
+// 现在强盛的国家更能吸收一次失手，挫折随国势递减，曲线才有中间地带。
+export function activityFailure(sourceEffect: EffectLike, r: Resources): EffectLike {
+  const e = normalizeEffect(sourceEffect)
+  const setback = (authored: number | undefined, current: number, weight: number) => {
+    const cost = authored && authored < 0 ? authored : 0
+    return Math.min(0, cost - Math.max(2, Math.round(weight * (1 - current / 140))))
+  }
+  return {
+    ...e,
+    // 失败不会带来正面收益，但事件本身写明的代价照付。
+    military: Math.min(0, e.military && e.military < 0 ? e.military : 0),
+    politics: setback(e.politics, r.politics, 5),
+    economy: setback(e.economy, r.economy, 5),
+    destiny: setback(e.destiny, r.destiny, 3),
+    city: undefined,
+    talent: undefined,
+    spouse: undefined,
+    armyType: undefined,
+  }
+}
+
 export function militaryFailure(sourceEffect: EffectLike, r: Resources): EffectLike {
   const e = normalizeEffect(sourceEffect)
   // 强军即使失手，也更有能力收拾残局；疲弱军队则会把一次败仗扩散成连锁损失。
@@ -236,9 +260,9 @@ export function politicalResult(sourceEffect: EffectLike, r: Resources, phase?: 
 
 export function challengeOdds(base: number, label: string, r: Resources, court?: Court): { odds: number; hint: string } {
   const aggressive = /攻|破|夺|登城|镇压|冒险|夜渡/.test(label)
-  // 阶段挑战是整局的高压节点：选项上的原始胜算只代表理想条件，
-  // 真正结算时统一承受一轮乱世风险，让挑战明显比普通事件更容易失手。
-  let odds = base * 0.72
+  // 准备不足会降低胜算，强军与稳固朝局会提高胜算。
+  // 不再额外一律打七二折：让安全路线与前期经营真正提供可靠的选择。
+  let odds = base
   const bits: string[] = []
   if (aggressive) {
     odds += (r.military - 50) * 0.004 + (r.economy - 50) * 0.0015
@@ -296,10 +320,33 @@ export function checkCrisis(r: Resources): Crisis | null {
   return null
 }
 
-/** 天命越低，任何一次随机事件都越可能突然转成坏结局；天命归零立即结束。 */
+/** 天命越低，变故越频繁；先示警，危局未解时再遇变故才可能覆亡。 */
 export function badEndingChance(destiny: number, extraRisk = 0): number {
   const pressure = (100 - clamp(destiny)) / 100
   return Math.min(0.88, 0.012 + pressure * pressure * 0.58 + extraRisk)
+}
+
+export const MANDATE_RECOVERY = 56
+/** A random reversal first gives a visible warning; recovery clears it before another roll. */
+export function checkMandate(r: Resources, warned: boolean, extraRisk = 0, roll = Math.random()) {
+  if (r.destiny <= 0) return { res: r, warned, fatal: true, note: '天命已尽，旧部与地方再也无法维系。' }
+  if (warned && r.destiny >= MANDATE_RECOVERY) return { res: r, warned: false, fatal: false, note: '天命重回稳健，先前离散的人心暂时收拢。危局解除。' }
+  if (roll >= badEndingChance(r.destiny, extraRisk)) return { res: r, warned, fatal: false, note: '' }
+  if (warned) return { res: r, warned: true, fatal: true, note: '此前的危局尚未平息，新的变故又至。你未能挽回天命，各方终于离散。' }
+  const after = clampResources({ ...r, destiny: Math.max(1, r.destiny - 6) })
+  const needsRecovery = after.destiny < MANDATE_RECOVERY
+  return { res: after, warned: needsRecovery, fatal: false, note: needsRecovery ? '危局警讯：地方开始观望，天命受损。让天命恢复稳健可解除警讯；若此前再遇变故，王朝可能覆亡。' : '地方一时观望，天命略损。所幸根基稳健，变故未成危局。' }
+}
+
+/** Shared by the ending and its visible checklist, so goals cannot drift from the rules. */
+export function foundingReadiness(r: Resources) {
+  const pillars = [
+    { key: 'military', label: '军势站稳', ready: r.military >= 58 },
+    { key: 'politics', label: '朝野归心', ready: r.politics >= 58 },
+    { key: 'economy', label: '府库能支', ready: r.economy >= 55 },
+  ]
+  const count = pillars.filter(p => p.ready).length
+  return { pillars, count, mandate: r.destiny >= 38, ready: count >= 2 && r.destiny >= 38 }
 }
 
 // ---------- 结局 ----------
@@ -307,8 +354,8 @@ export interface Ending { win: boolean; title: string; reign: string; text: stri
 
 export function resolveEnding(r: Resources, cities: number, talents: number): Ending {
   if (r.destiny <= 0) return { win: false, title: '天命断绝', reign: '无号', text: '天命在最后一刻归于寂灭。你的旗帜还在，天下却已经不再承认它。' }
-  const pillars = [r.military >= 58, r.politics >= 58, r.economy >= 55].filter(Boolean).length
-  if (pillars < 2 || r.destiny < 38) {
+  const readiness = foundingReadiness(r), pillars = readiness.count
+  if (!readiness.ready) {
     return { win: false, title: '乱世吞没了你', reign: '无号', text: '你曾经握住过军队、朝堂或国库，却没有让它们在同一个方向上站稳。新朝尚未写完，旧乱已经卷土重来。' }
   }
   if (pillars === 3 && r.destiny >= 62 && cities >= 3 && talents >= 3) {

@@ -1,10 +1,10 @@
-import { domainFor, EffectLike } from '../rules'
+import { domainFor, EffectLike, normalizeEffect } from '../rules'
 import { Vec } from './model'
 
 export type OrderKind = 'assault' | 'escort' | 'relief' | 'council' | 'ceremony'
 export type WorldOption = { label: string; detail: string; effect: EffectLike; success?: number; reward?: EffectLike }
 export type WorldEvent = { id: string; title: string; body: string; source: string; phase: string; options: WorldOption[] }
-export type Order = { kind: OrderKind; title: string; brief: string; target: Vec; required: number; pickup?: Vec; deliveries?: Vec[]; cargo?: string; convoy?: 'people' }
+export type Order = { kind: OrderKind; title: string; brief: string; target: Vec; required: number; pickup?: Vec; deliveries?: Vec[]; deliveryNames?: string[]; cargo?: string; convoy?: 'people'; proposal?: EffectLike }
 export const PLACES = {
   gate: { x: 450, y: 330, name: '关隘', title: '军营 · 城防' },
   granary: { x: 1380, y: 320, name: '粮仓', title: '仓储 · 商路' },
@@ -67,11 +67,11 @@ export function orderFor(event: WorldEvent, index: number): Order {
   const config: Record<OrderKind, Omit<Order, 'kind' | 'title'>> = {
     assault: { brief: '前往关隘，击退驻防军，再留在旗帜旁接管防务。红色预警落下前闪避。', target: PLACES.gate, required: 1 },
     escort: { brief: '到粮仓接应辎重车，沿商路护送到城镇。靠近车队才会继续前进；击退沿途劫匪。', target: PLACES.town, required: 1 },
-    relief: { brief: '从粮仓领取物资，亲自送到三处民居。每次携带一份；靠近光标按 E 或「交互」。', target: PLACES.granary, required: 3 },
-    council: { brief: '在行宫、城镇与关隘拜访三方代表。靠近使者交互，依次处理他们的诉求，让这道决定落地。', target: PLACES.court, required: 3 },
+    relief: { brief: '从粮仓一次备齐物资，自选路线送到三处民居。靠近任一未领物资的人家，按 E 或「交互」。', target: PLACES.granary, required: 3 },
+    council: { brief: '拜访三方代表，争取至少两方支持。可依靠现有国势与政令说服，或拨款落实承诺；至多筹措两次，支出随政令结算。', target: PLACES.court, required: 3 },
     ceremony: { brief: '到行宫领取文书，将它带到祭坛。按住交互，在游标进入金色区间时松开，完成三次礼制校准。', target: PLACES.altar, required: 3 },
   }
-  const order: Order = { kind, title: option.label, ...config[kind] }
+  const order: Order = { kind, title: option.label, proposal: normalizeEffect(effect, event.phase), ...config[kind] }
   if (kind === 'assault' && event.id === 'challenge-2') { order.target = PLACES.granary; order.brief = '前往粮仓，击退守军，再留在旗帜旁接管仓储。' }
   if (kind === 'escort' && ['t-children', 't-warrant', 'z-prisoners', 'j-migrate', 'challenge-1'].includes(event.id)) {
     order.convoy = 'people'; order.pickup = { x: 540, y: 440 }
@@ -80,8 +80,8 @@ export function orderFor(event: WorldEvent, index: number): Order {
   }
   if (kind === 'relief') {
     order.cargo = ['f-hospital', 't-physician', 'z-plague', 'plague'].includes(event.id) ? '药材' : event.id === 'f-wall' ? '修墙木料' : event.id === 'f-school' ? '义学物资' : ['t-spoils', 't-river', 'f-mint'].includes(event.id) ? '款项' : '救济物资'
-    if (event.id === 'f-wall') order.deliveries = [{ x: 300, y: 345 }, { x: 450, y: 490 }, { x: 600, y: 340 }]
-    order.brief = `到粮仓领取${order.cargo}，送到三处标记。每次携带一份；靠近光标按 E 或「交互」。`
+    if (event.id === 'f-wall') { order.deliveries = [{ x: 300, y: 345 }, { x: 450, y: 490 }, { x: 600, y: 340 }]; order.deliveryNames = ['西墙', '南墙', '东墙'] }
+    order.brief = `到粮仓备齐三份${order.cargo}，自选顺序送到三处标记。配送清单可设定路线，走近任一未送达地点也可直接交付。`
   }
   return order
 }

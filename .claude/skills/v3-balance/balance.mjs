@@ -3,7 +3,7 @@
 //   node .claude/skills/v3-balance/balance.mjs [局数] [--url http://localhost:8080/v3/] [--fresh]
 //
 // 为什么要「随机乱选」：v3 的数值散布在 107 个手写事件里，肉眼看代码判断不了强弱。
-// 一个不动脑子的玩家的胜率，是唯一稳定、可复现的整体强度指标。
+// 固定随机选择策略提供难度参照；随机序列与样本量仍会影响结果，也不能代替真人试玩。
 // 当前基准见 SKILL.md（AGENTS.md 里也记着这个数）。
 import { chromium } from 'playwright'
 
@@ -70,12 +70,14 @@ for (let run = 1; run <= runs; run++) {
   let settled = false
   for (let step = 0; step < 150 && !settled; step++) {
     // 1) 终局面板
-    if (await page.locator('.result-overlay').count()) {
-      const win = await page.locator('.result-card.victory').count() > 0
-      // 结算面板出现的那一帧可能还没画好文字，读空了就等一下再读一次
-      let title = await read(page, '.result-card h2')
-      if (!title) { await page.waitForTimeout(200); title = await read(page, '.result-card h2') }
-      title ||= '（未读到结局标题）'
+    const ending = await page.locator('.result-overlay .result-card').evaluateAll(cards => {
+      const card = cards[0]
+      return card ? { win: card.classList.contains('victory'), title: card.querySelector('h2')?.textContent?.trim() ?? '' } : null
+    })
+    if (ending) {
+      // Read win/title together from one render; never count an incomplete panel as a loss.
+      if (!ending.title) { await page.waitForTimeout(50); continue }
+      const { win, title } = ending
       endings.set(title, (endings.get(title) ?? 0) + 1)
       win ? wins++ : losses++
       settled = true

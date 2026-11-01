@@ -1,4 +1,8 @@
 import * as T from 'three'
+import { makeArrowGeometry, makeWarrior, poseWarrior } from './warriors3d'
+import { BattleDust } from './battleDust'
+import { loadHumans } from './animatedHumans'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import type { DynastyBattle } from './engine'
 import { clamp, distance, Vec, WORLD } from './model'
 import { BUILDINGS, ENVOYS, GROVE, HOMES, POND, ROAD_EDGES, ROAD_NODES, STALLS, UNIT, WELL } from './layout'
@@ -22,17 +26,21 @@ export class WorldRenderer {
   private scene = new T.Scene()
   private camera = new T.PerspectiveCamera(42, 1, .3, 420)
   private sun = new T.DirectionalLight('#ffe3b5', 2.5)
+  private battleDust = new BattleDust()
   private hemi = new T.HemisphereLight('#dfe6d0', '#554d38', 1.2)
   private sky: T.Mesh<T.SphereGeometry, T.ShaderMaterial>
   private fog = new T.Fog('#bcc3ad', 50, 200)
   private overlay = document.createElement('div')
   private labels = new Map<string, HTMLDivElement>()
   private used = new Set<string>()
-  private player = makeActor('player')
+  private player = makeWarrior('player', '#653a32')
   private playerRing: T.Mesh
   private carried = makeCarriedSupplies()
   private surfaces: ReturnType<typeof loadVillageSurfaces>
   private enemies = new Map<number, ActorRig>()
+  private allies = new Map<number, ActorRig>()
+  private fallen: { rig: ActorRig; life: number }[] = []
+  private armyBanners = [makeBanner(), makeBanner()]
   private villagers = new Map<number, { rig: Rig | ActorRig; heading: number }>()
   private envoys: ActorRig[] = []
   private legacy = new Map<number, Placed>()
@@ -57,7 +65,12 @@ export class WorldRenderer {
   private heading = Math.PI
   private yaw = 0; private yawTarget = 0; private pitch = .76; private pitchTarget = .76; private zoom = 21; private zoomTarget = 21
   private focus = new T.Vector3(900 / UNIT, 0, 590 / UNIT)
-  private pointers = new Map<number, { x: number; y: number }>()
+  private battleFraming = 1
+  private closeView = 0
+  private cameraOrder: DynastyBattle['order'] = null
+  private pointers = new Map<number, { x: number; y: number; startX: number; startY: number }>()
+  private game?: DynastyBattle
+  private lastGameTime = 0
   private clock = 0
   private last = performance.now()
   private lastWagon = new T.Vector3()
@@ -69,8 +82,11 @@ export class WorldRenderer {
   constructor(private canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
     this.renderer = new T.WebGLRenderer({ canvas, context, antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.matchMedia('(pointer: coarse)').matches ? 1.5 : 2))
-    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = T.PCFShadowMap
+    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = T.PCFSoftShadowMap
     this.renderer.toneMapping = T.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.05
+    const studio = new RoomEnvironment(), generator = new T.PMREMGenerator(this.renderer), lighting = generator.fromScene(studio, .04)
+    this.scene.environment = lighting.texture; this.scene.environmentIntensity = .4
+    studio.dispose(); generator.dispose(); this.cleanup.push(() => lighting.dispose())
     canvas.dataset.renderer = '3d'
     this.scene.fog = this.fog
     this.sky = new T.Mesh(new T.SphereGeometry(300, 32, 16), new T.ShaderMaterial({
@@ -79,7 +95,7 @@ export class WorldRenderer {
       vertexShader: 'varying float h; void main() { h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: 'uniform vec3 top; uniform vec3 horizon; varying float h; void main() { gl_FragColor = vec4(mix(horizon, top, smoothstep(-0.05, 0.45, h)), 1.0); }',
     }))
-    this.scene.add(this.sky, this.hemi, this.sun, this.sun.target)
+    this.scene.add(this.sky, this.hemi, this.sun, this.sun.target, this.battleDust.mesh)
     this.sun.castShadow = true; this.sun.shadow.mapSize.set(2048, 2048)
     Object.assign(this.sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 110 })
     this.sun.shadow.bias = -.0004; this.sun.shadow.normalBias = .03
@@ -87,6 +103,19 @@ export class WorldRenderer {
     this.buildTerrain(); this.buildVillage()
     this.player.root.add(this.carried.root)
     this.scene.add(this.player.root)
+    let disposed = false
+    this.canvas.dataset.characters = 'loading'
+    this.cleanup.push(() => { disposed = true })
+    void loadHumans().then(ready => {
+      if (disposed) return
+      this.canvas.dataset.characters = ready ? 'ready' : 'fallback'
+      if (!ready) return
+      const previous = this.player
+      this.player = makeWarrior('player', '#593b31'); this.player.root.add(this.carried.root)
+      this.scene.remove(previous.root); disposeObject(previous.root); this.scene.add(this.player.root)
+      for (const rigs of [this.allies, this.enemies]) { for (const rig of rigs.values()) { this.scene.remove(rig.root); disposeObject(rig.root) }; rigs.clear() }
+      this.enemyCloth.clear()
+    })
     this.playerRing = new T.Mesh(new T.RingGeometry(.62, .74, 36), new T.MeshBasicMaterial({ color: '#f4d68e', transparent: true, opacity: .75, depthWrite: false }))
     this.playerRing.rotation.x = -Math.PI / 2; this.scene.add(this.playerRing)
     ENVOYS.forEach((p, i) => { const rig = makeActor('civilian', ['#4f7d7e', '#9a8c58', '#8a5140'][i]); rig.root.position.copy(at(p)); this.scene.add(rig.root); this.envoys.push(rig) })
@@ -115,7 +144,10 @@ export class WorldRenderer {
   // Drag to orbit, wheel or pinch to zoom. The joystick is a separate element, so touches here only steer the camera.
   private bindInput() {
     const canvas = this.canvas
-    const down = (e: PointerEvent) => { this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); canvas.setPointerCapture?.(e.pointerId) }
+    const down = (e: PointerEvent) => {
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY }); canvas.setPointerCapture?.(e.pointerId)
+      if (e.pointerType === 'mouse' && e.button === 2) this.game?.setGuard(true)
+    }
     const move = (e: PointerEvent) => {
       const p = this.pointers.get(e.pointerId)
       if (!p) return
@@ -128,15 +160,23 @@ export class WorldRenderer {
       }
       p.x = e.clientX; p.y = e.clientY
     }
-    const up = (e: PointerEvent) => { this.pointers.delete(e.pointerId) }
+    const up = (e: PointerEvent) => {
+      const point = this.pointers.get(e.pointerId)
+      if (e.pointerType === 'mouse' && e.button === 2) this.game?.setGuard(false)
+      if (e.type === 'pointerup' && e.pointerType === 'mouse' && e.button === 0 && point && Math.hypot(e.clientX - point.startX, e.clientY - point.startY) < 6) { this.game?.setAttack(true); this.game?.setAttack(false) }
+      this.pointers.delete(e.pointerId)
+    }
+    const release = () => { this.pointers.clear(); this.game?.setGuard(false) }
     const wheel = (e: WheelEvent) => { e.preventDefault(); this.zoomTarget = clamp(this.zoomTarget * (1 + e.deltaY * .0012), 13, 42) }
     const menu = (e: Event) => e.preventDefault()
     canvas.addEventListener('pointerdown', down); canvas.addEventListener('pointermove', move)
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up)
+    canvas.addEventListener('lostpointercapture', release); window.addEventListener('blur', release)
     canvas.addEventListener('wheel', wheel, { passive: false }); canvas.addEventListener('contextmenu', menu)
     this.cleanup.push(() => {
       canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move)
       canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', up)
+      canvas.removeEventListener('lostpointercapture', release); window.removeEventListener('blur', release)
       canvas.removeEventListener('wheel', wheel); canvas.removeEventListener('contextmenu', menu)
     })
   }
@@ -229,19 +269,21 @@ export class WorldRenderer {
       trees.push({ x, z, s: .9 + rand() * .8, pine: rand() < .45 })
     }
     const trunk = new T.InstancedMesh(new T.CylinderGeometry(.16, .26, 1.8, 6), materials.wood, trees.length)
-    const leafGeometry = new T.IcosahedronGeometry(1.35, 1), pineGeometry = new T.ConeGeometry(1.3, 3.2, 7)
+    const leafGeometry = new T.IcosahedronGeometry(.85, 2), pineGeometry = new T.ConeGeometry(1.2, 1.65, 12)
     const broad = trees.filter(t => !t.pine), pines = trees.filter(t => t.pine)
-    const leaves = new T.InstancedMesh(leafGeometry, new T.MeshStandardMaterial({ roughness: 1, flatShading: true }), broad.length * 2)
-    const needles = new T.InstancedMesh(pineGeometry, new T.MeshStandardMaterial({ roughness: 1, flatShading: true }), pines.length)
+    const leaves = new T.InstancedMesh(leafGeometry, new T.MeshStandardMaterial({ roughness: 1 }), broad.length * 7)
+    const needles = new T.InstancedMesh(pineGeometry, new T.MeshStandardMaterial({ roughness: 1 }), pines.length * 4)
     const m = new T.Matrix4(), q = new T.Quaternion(), color = new T.Color(), palette = ['#5f7948', '#6d8150', '#4f683e', '#87925c', '#566f45']
     trees.forEach((t, i) => { m.compose(new T.Vector3(t.x, .9 * t.s, t.z), q, new T.Vector3(t.s, t.s, t.s)); trunk.setMatrixAt(i, m) })
     broad.forEach((t, i) => {
       q.setFromEuler(new T.Euler(0, rand() * 3, 0))
-      m.compose(new T.Vector3(t.x, 2.5 * t.s, t.z), q, new T.Vector3(t.s * 1.1, t.s, t.s * 1.1)); leaves.setMatrixAt(i * 2, m)
-      m.compose(new T.Vector3(t.x + .3, 3.4 * t.s, t.z - .2), q, new T.Vector3(t.s * .75, t.s * .7, t.s * .75)); leaves.setMatrixAt(i * 2 + 1, m)
-      leaves.setColorAt(i * 2, color.set(palette[i % palette.length])); leaves.setColorAt(i * 2 + 1, color.set(palette[(i + 2) % palette.length]))
+      for (let j = 0; j < 7; j++) {
+        const angle = j * 2.4, spread = j === 6 ? 0 : .8, scale = t.s * (.8 + rand() * .3)
+        m.compose(new T.Vector3(t.x + Math.cos(angle) * spread, (j === 6 ? 3.6 : 2.7 + rand() * .4) * t.s, t.z + Math.sin(angle) * spread), q, new T.Vector3(scale, scale * .85, scale))
+        leaves.setMatrixAt(i * 7 + j, m); leaves.setColorAt(i * 7 + j, color.set(palette[(i + j) % palette.length]))
+      }
     })
-    pines.forEach((t, i) => { m.compose(new T.Vector3(t.x, 2.6 * t.s, t.z), q.identity(), new T.Vector3(t.s, t.s, t.s)); needles.setMatrixAt(i, m); needles.setColorAt(i, color.set(i % 2 ? '#3f5a3e' : '#4b6644')) })
+    pines.forEach((t, i) => { for (let j = 0; j < 4; j++) { const s = t.s * (1 - j * .19); m.compose(new T.Vector3(t.x, (1.8 + j * .64) * t.s, t.z), q.identity(), new T.Vector3(s, t.s * .9, s)); needles.setMatrixAt(i * 4 + j, m); needles.setColorAt(i * 4 + j, color.set(j % 2 ? '#52684a' : '#435c3e')) } })
     for (const im of [trunk, leaves, needles]) { im.castShadow = true; im.receiveShadow = true; this.scene.add(im) }
     // Palisade on the edge of the walkable field.
     const posts: T.Vector3[] = []
@@ -321,12 +363,19 @@ export class WorldRenderer {
     el.style.transform = `translate(${((v.x + 1) / 2 * w).toFixed(1)}px, ${((1 - v.y) / 2 * h).toFixed(1)}px) translate(-50%, -100%)`
   }
   private pose(rig: Rig | ActorRig, moving: boolean, step: number, time: number, mood?: string) {
+    if ('human' in rig && rig.human) return
     const s = moving ? Math.sin(step) : 0, lift = mood === 'afraid' ? -1.1 : 0
     rig.leftLeg.rotation.x = s * .75; rig.rightLeg.rotation.x = -s * .75
     rig.leftArm.rotation.x = -s * .6 + lift; rig.rightArm.rotation.x = s * .6 + lift
     rig.leftArm.rotation.z = 0; rig.rightArm.rotation.z = 0
-    const body = 'body' in rig ? rig.body : rig.root
+    const body = rig.body ?? rig.root
     body.position.y = moving ? Math.abs(Math.sin(step)) * .07 : Math.sin(time * 2) * .012
+    if ('joints' in rig && rig.joints) {
+      rig.joints.knees[0].rotation.x = Math.max(0, -s) * 1.05
+      rig.joints.knees[1].rotation.x = Math.max(0, s) * 1.05
+      rig.joints.elbows.forEach(elbow => { elbow.rotation.x = -.35 })
+      rig.body!.rotation.set(0, 0, 0)
+    }
     if (mood === 'cheer') {
       body.position.y = Math.abs(Math.sin(time * 7)) * .28
       rig.leftArm.rotation.x = rig.rightArm.rotation.x = -2.7 + Math.sin(time * 9) * .25
@@ -345,11 +394,20 @@ export class WorldRenderer {
     this.hemi.intensity += (a.hemiI + (b.hemiI - a.hemiI) * k - this.hemi.intensity) * blend
   }
   draw(game: DynastyBattle) {
+    this.game = game
     const now = performance.now(), dt = Math.min(.05, (now - this.last) / 1000); this.last = now; this.clock += dt
     const time = this.clock, village = game.village, playing = game.status === 'playing'
+    const animationDt = playing ? clamp(game.seconds - this.lastGameTime, 0, .05) : 0; this.lastGameTime = game.seconds
     this.used.clear()
+    if (this.cameraOrder !== game.order) {
+      this.cameraOrder = game.order
+      if (game.order?.kind === 'assault' && game.closeCombatCamera) {
+        this.yawTarget = Math.atan2(game.player.x - game.order.target.x, game.player.y - game.order.target.y)
+      }
+    }
     // Camera: orbit target follows the hero; the engine reads the yaw back so W always walks "into" the screen.
     this.yawTarget -= game.cameraTurn * dt * 1.9
+    if (game.closeCombatCamera && game.player.swing > .30 && game.enemies.length) this.yawTarget = this.turn(this.yawTarget, game.player.heading - Math.PI, dt * .4)
     const ease = 1 - Math.exp(-dt * 10)
     this.yaw += (this.yawTarget - this.yaw) * ease; this.pitch += (this.pitchTarget - this.pitch) * ease; this.zoom += (this.zoomTarget - this.zoom) * ease
     game.cameraYaw = this.yaw
@@ -369,42 +427,82 @@ export class WorldRenderer {
     this.carried.medicine.visible = !papers && medicine
     this.carried.parcel.visible = !papers && !medicine
     if (carrying) { hero.leftArm.rotation.x = -.95; hero.rightArm.rotation.x = -.95 }
-    if (p.swing > 0) { const k = 1 - p.swing / .26; hero.rightArm.rotation.x = -2.2 + k * 2.9; hero.rightArm.rotation.z = -.3 }
-    hero.cape.rotation.x = -.15 - (moving ? .35 : 0) - Math.sin(time * 3) * .04
-    hero.root.visible = !(p.hurt > 0 && Math.floor(time * 20) % 2)
+    poseWarrior(hero, 0, p.swing, p.hurt, p.guarding, p.combo)
+    hero.human?.update({ moving, attacking: p.swing, combo: p.combo, guard: p.guarding, hit: p.hurt, dash: p.invulnerable > .15 && moving && game.cooldowns.dash > 2.1, battle: Boolean(game.enemies.length) }, animationDt)
+    if (!hero.human) hero.cape.rotation.x = -.15 - (moving ? .35 : 0) - Math.sin(time * 3) * .04
+    hero.root.visible = true
     this.playerRing.position.copy(at(p, .04))
+    if (game.order?.kind === 'assault' && !game.closeCombatCamera) this.label('commander', '你 · 统帅', at(p, 2.8), 'name')
+    for (const [i, banner] of this.armyBanners.entries()) {
+      if (!banner.root.parent) this.scene.add(banner.root)
+      banner.root.visible = game.order?.kind === 'assault'
+      if (game.order?.kind === 'assault') {
+        const point = { x: game.order.target.x + (i === 0 ? -210 : 200), y: game.order.target.y + (i === 0 ? 270 : 15) }
+        banner.root.position.copy(at(point)); banner.root.scale.setScalar(1.25)
+        const material = banner.cloth.material as T.MeshStandardMaterial
+        material.map = i === 0 ? banner.textures.owned : banner.textures.held
+        const pos = banner.cloth.geometry.attributes.position as T.BufferAttribute
+        for (let j = 0; j < pos.count; j++) { const x = banner.base[j * 3]; pos.setZ(j, Math.sin(x * 3 - time * 5) * .18 * x) }
+        pos.needsUpdate = true
+        this.label(`army-banner${i}`, i === 0 ? '青旗 · 我军' : '赤旗 · 敌军', at(point, 6.1), 'name')
+      }
+    }
+    const friendly = new Set<number>()
+    for (const ally of game.allies) {
+      friendly.add(ally.id)
+      let rig = this.allies.get(ally.id)
+      if (!rig) { rig = makeWarrior(ally.kind, '#3d6661'); this.allies.set(ally.id, rig); this.scene.add(rig.root) }
+      rig.root.position.copy(at(ally)); rig.root.rotation.y = ally.heading
+      this.pose(rig, playing && ally.moving, ally.step, time)
+      poseWarrior(rig, ally.windup, ally.swing, ally.flash)
+      rig.human?.update({ moving: ally.moving, attacking: ally.kind === 'archer' ? 0 : ally.swing, windup: ally.windup, hit: ally.flash, battle: true }, animationDt)
+      if (ally.hp < ally.maxHp) this.label(`allyhp${ally.id}`, '', at(ally, 2.55), 'hp ally', ally.hp / ally.maxHp)
+    }
+    for (const [id, rig] of this.allies) if (!friendly.has(id)) { if (game.order) this.fallen.push({ rig, life: 2.4 }); else { this.scene.remove(rig.root); disposeObject(rig.root) }; this.allies.delete(id) }
+    for (const body of this.fallen) {
+      if (playing) body.life -= dt
+      if (body.rig.human) body.rig.human.update({ moving: false, attacking: 0, dead: true }, animationDt)
+      else body.rig.root.rotation.z = Math.min(1.5, body.rig.root.rotation.z + (playing ? dt * 5 : 0))
+      if (body.life < .5) body.rig.root.scale.setScalar(Math.max(0, body.life * 2))
+      if (body.life <= 0) { body.rig.human?.dispose(); this.scene.remove(body.rig.root); disposeObject(body.rig.root) }
+    }
+    this.fallen = this.fallen.filter(body => body.life > 0)
     // Enemies.
     const alive = new Set<number>()
     for (const e of game.enemies) {
       alive.add(e.id)
       let rig = this.enemies.get(e.id)
       if (!rig) {
-        rig = makeActor(e.kind, '#7c3b32'); this.enemies.set(e.id, rig); this.scene.add(rig.root)
+        rig = makeWarrior(e.kind, '#743c32'); this.enemies.set(e.id, rig); this.scene.add(rig.root)
         rig.root.traverse(o => { if (o instanceof T.Mesh && o.material instanceof T.MeshStandardMaterial && o.material.color.getHexString() === '7c3b32') this.enemyCloth.set(e.id, o.material) })
       }
-      rig.root.position.copy(at(e)); rig.root.rotation.y = Math.atan2(p.x - e.x, p.y - e.y)
-      this.pose(rig, playing && e.windup <= 0 && distance(e, p) > e.radius + 30, e.step, time)
-      if (e.windup > 0) rig.rightArm.rotation.x = -2.4
+      const target = game.allies.reduce<{ x: number; y: number }>((best, ally) => distance(e, ally) < distance(e, best) ? ally : best, p)
+      rig.root.position.copy(at(e)); rig.root.rotation.y = Math.atan2(target.x - e.x, target.y - e.y)
+      this.pose(rig, playing && e.windup <= 0 && distance(e, target) > e.radius + 30, e.step, time)
+      poseWarrior(rig, e.windup, e.cooldown > 1 ? Math.min(.3, e.cooldown - 1) : 0, e.flash)
+      rig.human?.update({ moving: e.windup <= 0 && distance(e, target) > (e.kind === 'archer' ? 265 : 76), attacking: e.kind !== 'archer' && e.cooldown > 1 && e.cooldown <= 1.2 ? e.cooldown - 1 : 0, windup: e.windup, hit: e.flash, battle: true }, animationDt)
       this.enemyCloth.get(e.id)?.emissive.setScalar(e.flash > 0 ? .6 : 0)
       if (e.hp < e.maxHp) this.label(`hp${e.id}`, '', at(e, e.kind === 'brute' ? 3 : 2.45), 'hp', e.hp / e.maxHp)
     }
-    for (const [id, rig] of this.enemies) if (!alive.has(id)) { this.scene.remove(rig.root); disposeObject(rig.root); this.enemies.delete(id); this.enemyCloth.delete(id) }
+    for (const [id, rig] of this.enemies) if (!alive.has(id)) { if (game.order) this.fallen.push({ rig, life: 2.4 }); else { this.scene.remove(rig.root); disposeObject(rig.root) }; this.enemies.delete(id); this.enemyCloth.delete(id) }
     // Villagers: the same crowd that reacts to orders, flees fighting and remembers past choices.
     const present = new Set<number>()
     for (const v of village.people) {
       present.add(v.id)
       let entry = this.villagers.get(v.id)
-      if (!entry) { entry = { rig: v.role === 'guard' ? makeActor('soldier', v.tint) : makeVillager(v.role, v.tint), heading: v.heading }; this.villagers.set(v.id, entry); this.scene.add(entry.rig.root) }
-      this.placeVillager(entry, v, dt, time)
+      if (!entry) { entry = { rig: v.role === 'guard' ? makeWarrior('soldier', v.tint) : makeVillager(v.role, v.tint), heading: v.heading }; this.villagers.set(v.id, entry); this.scene.add(entry.rig.root) }
+      this.placeVillager(entry, v, animationDt, time)
+      if (v.contactId && distance(v, p) < 650) this.label(`contact${v.id}`, `${v.name}${game.stories.offer(v.contactId, game.turn) ? ' · 有事相托' : ''}`, at(v, 2.1), 'name')
       if (v.talk > 0) this.label(`say${v.id}`, v.line, at(v, 2.5), 'say')
     }
     for (const [id, entry] of this.villagers) if (!present.has(id)) { this.scene.remove(entry.rig.root); disposeObject(entry.rig.root); this.villagers.delete(id) }
     const names = ['行宫文官', '城镇乡老', '关隘军官']
     this.envoys.forEach((rig, i) => {
+      rig.root.visible = game.order?.kind !== 'assault'
       rig.root.rotation.y = this.turn(rig.root.rotation.y, distance(ENVOYS[i], p) < 260 ? Math.atan2(p.x - ENVOYS[i].x, p.y - ENVOYS[i].y) : 0, dt)
       this.pose(rig, false, 0, time + i)
       const next = game.order?.kind === 'council' && !game.completed.has(i) && ENVOYS.findIndex((_, j) => !game.completed.has(j)) === i
-      if (distance(ENVOYS[i], p) < 700 || next) this.label(`envoy${i}`, next ? `${names[i]} · 待拜访` : names[i], at(ENVOYS[i], 2.55), next ? 'name wl-next' : 'name')
+      if (rig.root.visible && (distance(ENVOYS[i], p) < 700 || next)) this.label(`envoy${i}`, next ? `${names[i]} · 待拜访` : names[i], at(ENVOYS[i], 2.55), next ? 'name wl-next' : 'name')
     })
     this.drawConvoy(game, dt, time)
     this.drawEffects(game, time)
@@ -432,16 +530,51 @@ export class WorldRenderer {
     ring.scale.setScalar(1 + Math.sin(time * 3) * .08)
     if (game.objectiveReady()) this.label('prompt', game.carrying ? 'E · 送达 / 办理' : game.order?.kind === 'relief' ? 'E · 领取物资' : 'E · 交互', at(target, 3.4), 'prompt')
     else { const v = village.near(p, 80); if (v && v.talk <= 0) this.label('prompt', 'E · 交谈', at(v, 2.6), 'prompt') }
-    if (game.carrying) this.label('carry', game.order?.kind === 'ceremony' ? '携带文书' : game.order?.cargo ?? '携带物资', at(p, 2.7), 'name')
-    if (game.order?.kind === 'relief') (game.order.deliveries ?? HOMES).forEach((home, i) => this.label(`home${i}`, game.completed.has(i) ? '已送达' : '待送达', at(home, 1.4), game.completed.has(i) ? 'name' : 'name wl-next'))
+    if (game.carrying) this.label('carry', game.order?.kind === 'ceremony' ? '携带文书' : `${game.order?.cargo ?? '物资'} ×${game.cargoCount}`, at(p, 2.7), 'name')
+    if (game.order?.kind === 'relief') (game.order.deliveries ?? HOMES).forEach((home, i) => this.label(`home${i}`, `${game.deliveryName(i)} · ${game.completed.has(i) ? '已送达' : '待送达'}`, at(home, 1.4), game.completed.has(i) ? 'name' : 'name wl-next'))
     // Camera placement, shake, sun follows the hero so shadows stay crisp nearby.
-    const focusTarget = at(p, .9)
+    const close = game.closeCombatCamera && (game.order?.kind === 'assault' || game.enemies.length > 0)
+    this.closeView += ((close ? 1 : 0) - this.closeView) * (1 - Math.exp(-dt * 7))
+    const focusTarget = at(p, .9 + this.closeView * .5)
+    if (close) {
+      focusTarget.x += (Math.cos(this.yaw) * .65 - Math.sin(this.yaw) * 1.2) * this.closeView
+      focusTarget.z += (-Math.sin(this.yaw) * .65 - Math.cos(this.yaw) * 1.2) * this.closeView
+    }
+    if (!close && game.order?.kind === 'assault' && game.enemies.length) {
+      const nearby = game.enemies.filter(enemy => distance(enemy, p) < 450)
+      if (nearby.length) {
+        const center = nearby.reduce((v, enemy) => ({ x: v.x + enemy.x / nearby.length, y: v.y + enemy.y / nearby.length }), { x: 0, y: 0 })
+        const offset = at(center, .9).sub(focusTarget).multiplyScalar(.35).clampLength(0, 3.2)
+        focusTarget.add(offset)
+      }
+    }
+    if (this.focus.distanceTo(focusTarget) > 8) this.focus.copy(focusTarget)
     this.focus.lerp(focusTarget, 1 - Math.exp(-dt * 8))
     // Portrait screens look down more steeply so nearby roofs do not fill the lower half.
-    const portrait = this.camera.aspect < .8, pitch = Math.min(1.32, this.pitch + (portrait ? .14 : 0)), flat = Math.cos(pitch) * this.zoom * (portrait ? 1.12 : 1)
-    this.camera.position.set(this.focus.x + Math.sin(this.yaw) * flat, this.focus.y + Math.sin(pitch) * this.zoom, this.focus.z + Math.cos(this.yaw) * flat)
+    const portrait = this.camera.aspect < .8
+    // Show both battle lines on narrow screens while preserving manual pinch zoom.
+    this.battleFraming += ((portrait && game.order?.kind === 'assault' ? 1.45 : 1) - this.battleFraming) * (1 - Math.exp(-dt * 8))
+    const wideDistance = this.zoom * this.battleFraming, nearDistance = this.zoom * (portrait ? .46 : .33)
+    const cameraDistance = T.MathUtils.lerp(wideDistance, nearDistance, this.closeView)
+    const pitch = Math.max(.06, Math.min(1.32, this.pitch + (portrait ? .14 : 0) - (close ? .53 : game.order?.kind === 'assault' ? .12 : 0)))
+    const flat = Math.cos(pitch) * cameraDistance * (portrait ? 1.12 : 1)
+    const fov = close ? portrait ? 68 : 60 : portrait ? 54 : 42
+    this.camera.fov += (fov - this.camera.fov) * ease; this.camera.updateProjectionMatrix()
+    this.camera.position.set(this.focus.x + Math.sin(this.yaw) * flat, this.focus.y + Math.sin(pitch) * cameraDistance, this.focus.z + Math.cos(this.yaw) * flat)
+    if (close) {
+      const direction = this.camera.position.clone().sub(this.focus), wanted = direction.length()
+      this.ray.set(this.focus, direction.normalize())
+      let safe = wanted
+      for (const building of this.buildings) {
+        if (building.box.containsPoint(this.focus)) continue
+        const hit = this.ray.intersectBox(building.box, this.temp)
+        if (hit) safe = Math.min(safe, Math.max(1.5, this.focus.distanceTo(hit) - .3))
+      }
+      this.camera.position.copy(this.focus).addScaledVector(direction, safe)
+    }
     if (game.shake > 0 && !this.reduced) this.camera.position.add(new T.Vector3((Math.random() - .5) * game.shake * .04, (Math.random() - .5) * game.shake * .04, 0))
     this.camera.lookAt(this.focus)
+    this.battleDust.update(game, this.camera, dt, this.reduced)
     this.sky.position.copy(this.camera.position)
     this.sun.position.set(this.focus.x - 18, 34, this.focus.z + 14); this.sun.target.position.copy(this.focus)
     this.fadeOccluders(dt)
@@ -454,6 +587,7 @@ export class WorldRenderer {
     entry.heading = this.turn(entry.heading, v.heading, dt)
     entry.rig.root.rotation.y = entry.heading
     this.pose(entry.rig, v.moving, v.step, time + v.id, v.mood)
+    if ('human' in entry.rig) entry.rig.human?.update({ moving: v.moving, attacking: 0 }, dt)
   }
   private drawConvoy(game: DynastyBattle, dt: number, time: number) {
     const escort = game.order?.kind === 'escort', people = game.order?.convoy === 'people', w = game.wagon
@@ -491,7 +625,7 @@ export class WorldRenderer {
         line.rotation.set(-Math.PI / 2, 0, -Math.atan2(b.z - a.z, b.x - a.x))
       } else {
         const disc = this.discs[discs++] ?? this.pooled(this.discs, new T.Mesh(new T.CircleGeometry(1, 32), new T.MeshBasicMaterial({ color: '#c13a23', transparent: true, opacity: .35, depthWrite: false })))
-        const r = (e.kind === 'brute' ? 65 : 44) / UNIT
+        const r = (e.kind === 'brute' ? 65 : 36) / UNIT
         disc.visible = true; disc.position.copy(at(e.target, .06)); disc.rotation.x = -Math.PI / 2; disc.scale.setScalar(r * (1.05 - e.windup * .4))
       }
     }
@@ -503,18 +637,18 @@ export class WorldRenderer {
       let fx = this.effects.get(slash)
       const enemySlam = slash.circle && slash.radius < 100, r = slash.radius / UNIT
       if (!fx) {
-        const geometry = slash.circle ? new T.RingGeometry(r * .82, r, 48) : new T.RingGeometry(r * .55, r, 24, 1, -slash.angle - 1.1, 2.2)
+        const geometry = slash.circle ? new T.RingGeometry(r * .95, r, 48) : new T.RingGeometry(r * .94, r, 24, 1, -slash.angle - 1.1, 2.2)
         fx = new T.Mesh(geometry, new T.MeshBasicMaterial({ color: enemySlam ? '#e0785a' : slash.circle ? '#a8ddd0' : '#fff0c0', transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide }))
         fx.rotation.x = -Math.PI / 2; this.scene.add(fx); this.effects.set(slash, fx)
       }
       const k = slash.life / slash.maxLife
       fx.position.copy(at(slash, slash.circle ? .15 : 1)); fx.scale.setScalar(1 - k * .18)
-      ;(fx.material as T.MeshBasicMaterial).opacity = k
+      ;(fx.material as T.MeshBasicMaterial).opacity = k * .55
     }
     for (const shot of game.projectiles) {
       live.add(shot)
       let fx = this.effects.get(shot)
-      if (!fx) { fx = new T.Mesh(new T.BoxGeometry(.06, .06, .9), new T.MeshBasicMaterial({ color: shot.friendly ? '#ffedb3' : '#f2a080' })); this.scene.add(fx); this.effects.set(shot, fx) }
+      if (!fx) { fx = new T.Mesh(makeArrowGeometry(), new T.MeshStandardMaterial({ color: shot.friendly ? '#bca678' : '#96745d', roughness: .6, metalness: .2 })); this.scene.add(fx); this.effects.set(shot, fx) }
       fx.position.copy(at(shot, 1.25)); fx.rotation.y = Math.atan2(shot.vx, shot.vy)
     }
     for (const heal of game.heals) {
@@ -595,6 +729,10 @@ export class WorldRenderer {
   }
   destroy() {
     this.cleanup.forEach(fn => fn())
+    this.player.human?.dispose()
+    for (const rigs of [this.allies, this.enemies]) for (const rig of rigs.values()) rig.human?.dispose()
+    for (const entry of this.villagers.values()) if ('human' in entry.rig) entry.rig.human?.dispose()
+    for (const body of this.fallen) body.rig.human?.dispose()
     this.overlay.remove()
     disposeObject(this.scene)
     for (const key of ['stone', 'wood', 'roof', 'plaster'] as const) {

@@ -1,4 +1,5 @@
 import * as T from 'three'
+import type { HumanAnimation } from './animatedHumans'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Building, UNIT } from './layout'
 
@@ -101,7 +102,7 @@ export function makeBuilding(building: Building, surfaces: typeof materials = ma
   if (building.kind === 'granary') for (let i = 0; i < 6; i++) mesh(g, sphere, new T.MeshStandardMaterial({ color: '#bba370', roughness: 1 }), -w * .32 + (i % 3) * .55, .5 + Math.floor(i / 3) * .5, d / 2 + .4, .4, .5, .35)
   return g
 }
-export type ActorRig = { root: T.Group; leftLeg: T.Group; rightLeg: T.Group; leftArm: T.Group; rightArm: T.Group; cape: T.Mesh; sword: T.Group }
+export type ActorRig = { root: T.Group; leftLeg: T.Group; rightLeg: T.Group; leftArm: T.Group; rightArm: T.Group; cape: T.Mesh; sword: T.Group; body?: T.Group; human?: HumanAnimation; joints?: { knees: T.Group[]; elbows: T.Group[]; role: string } }
 export function makeActor(role: 'player' | 'civilian' | 'soldier' | 'archer' | 'brute', tint = '#8b9273'): ActorRig {
   const root = new T.Group(), armored = role !== 'civilian', player = role === 'player'
   const cloth = new T.MeshStandardMaterial({ color: player ? '#962f2f' : tint, roughness: .85 })
@@ -111,6 +112,12 @@ export function makeActor(role: 'player' | 'civilian' | 'soldier' | 'archer' | '
   mesh(root, new T.CylinderGeometry(.26, .4, .45, 8), cloth, 0, .74, 0, 1, 1, .85)
   box(root, materials.gold, 0, .88, .01, .56, .07, .43)
   if (armored) for (let i = 0; i < 4; i++) box(root, materials.gold, 0, 1.02 + i * .1, .24, .48, .018, .02)
+  if (armored && !player) {
+    const plates = new T.InstancedMesh(cube, materials.edge, 15), matrix = new T.Matrix4()
+    for (let i = 0; i < 15; i++) { matrix.makeScale(.073, .078, .025); matrix.setPosition((i % 5 - 2) * .087, 1.02 + Math.floor(i / 5) * .105, .253); plates.setMatrixAt(i, matrix) }
+    plates.castShadow = true; root.add(plates)
+    const plume = mesh(root, new T.ConeGeometry(.055, .28, 6), cloth, 0, 2.05, -.05); plume.rotation.x = -.3
+  }
   mesh(root, sphere, materials.skin, 0, 1.65, .015, .2, .25, .18)
   mesh(root, sphere, materials.dark, 0, 1.79, -.025, .21, .14, .19)
   mesh(root, sphere, materials.dark, 0, 1.94, -.025, .085, .1, .085)
@@ -153,6 +160,13 @@ export function makeActor(role: 'player' | 'civilian' | 'soldier' | 'archer' | '
     sword.visible = false
     const bow = mesh(arms[0], new T.TorusGeometry(.45, .035, 4, 16, Math.PI), materials.wood, 0, -.4, .15)
     bow.rotation.y = Math.PI / 2
+    mesh(root, cylinder, materials.wood, .18, 1.15, -.3, .1, .65, .1)
+    for (let i = 0; i < 3; i++) mesh(root, cylinder, materials.edge, .13 + i * .045, 1.57, -.3, .01, .5, .01)
+  } else if (role === 'soldier') {
+    const shield = mesh(arms[0], new T.CylinderGeometry(.29, .29, .065, 12), cloth, 0, -.28, .22)
+    shield.rotation.x = Math.PI / 2
+    mesh(arms[0], new T.TorusGeometry(.29, .025, 5, 16), materials.edge, 0, -.28, .265)
+    mesh(arms[0], sphere, materials.gold, 0, -.28, .27, .07, .07, .04)
   }
   if (role === 'brute') root.scale.setScalar(1.25)
   root.traverse(object => { if (object instanceof T.Mesh) { object.castShadow = true; object.receiveShadow = true } })
@@ -198,6 +212,7 @@ const lanternGlow = new T.MeshStandardMaterial({ color: '#f0a25a', emissive: '#e
 const tinted = new Map<string, T.MeshStandardMaterial>()
 // Shared resources are never disposed with a rig or prop; everything else they own is.
 const SHARED = new Set<object>([cube, sphere, cylinder, robeGeometry, torsoGeometry, hatGeometry, cone4, cone6, disc, puffGeometry, straw, canvasCloth, earth, soot, smoke, flame, lanternGlow, ...Object.values(materials)])
+export function keepShared(...resources: object[]) { resources.forEach(resource => SHARED.add(resource)) }
 export function tint(color: string) {
   let m = tinted.get(color)
   if (!m) { m = new T.MeshStandardMaterial({ color, roughness: .9 }); tinted.set(color, m); SHARED.add(m) }
@@ -205,12 +220,15 @@ export function tint(color: string) {
 }
 export function disposeObject(root: T.Object3D) {
   root.traverse(object => {
+    if (object instanceof T.SkinnedMesh) object.skeleton.dispose()
     const item = object as T.Object3D & { geometry?: T.BufferGeometry; material?: T.Material | T.Material[] }
     // Sprites share one internal geometry, so only their materials are released.
     if (item.geometry && !(object instanceof T.Sprite) && !SHARED.has(item.geometry)) item.geometry.dispose()
     for (const m of item.material ? Array.isArray(item.material) ? item.material : [item.material] : []) {
       if (SHARED.has(m)) continue
-      ;(m as T.MeshStandardMaterial).map?.dispose(); m.dispose()
+      const map = (m as T.MeshStandardMaterial).map
+      if (map && !SHARED.has(map)) map.dispose()
+      m.dispose()
     }
   })
 }
