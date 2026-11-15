@@ -117,6 +117,28 @@ npm run dev:v3    # 调试 v3
 
 - **2026-11-01 发布验收补记**：清除失败活动的配偶 / 人才 / 军制奖励，保留原事件代价。整局模拟各 10 局：p=1 为 7 胜、p=0.9 为 6 胜、p=0.8 为 1 胜；30 局均抵达结局且零浏览器错误。小样本、非固定随机种子，p=0.8 仍偏难；不是实际玩家成功率。
 
+## v3 逐鹿：三路推塔对战（2026-11-15）
+- 大厅第三个入口「逐鹿开战」（`GameModes.tsx` 的 `arena`）。单机 5v5：玩家操控一位君王，四名 AI 友军对五名 AI 敌将，
+  三路兵线、防御塔、野怪，击毁敌方大鼎获胜，约十分钟一局。**不是联机**——站点是静态托管，没有服务器。
+- 全部代码在 `src/game3/arena/`，不 import 王朝流程，只借用 `action/` 的骨骼角色。`App.tsx` 只多了 `arena` 状态、
+  `finishArena` 和一行提前返回。逐鹿里十二位君王全部可选；胜利会解锁下一位君王，战绩另存 `dingge:v3:arena`。
+- **`arena/sim.ts` 是纯逻辑**（无 DOM、无 three.js、固定种子即确定性），整局规则、塔、兵线、技能与英雄 AI 都在里面；
+  `render.ts` 只读它来画，`game.ts` 负责输入与 HUD 快照。新增机制先写进 `sim.ts`，这样 node 里就能回归。
+- 只取 MOBA 品类通则（兵线 / 塔 / 三技能加大招 / 回城 / 推荐装备），**君王技能、名称、数值、装备与界面全部原创**；
+  不得照搬任何现有游戏的角色、技能名、图标或版式。
+- 改 `arena/data.ts` 或 `sim.ts` 的任何数值、规则后必须跑 `node .claude/skills/verify/v3-arena.mjs`：
+  数据自检、规则断言（含 36 个技能逐个生效）、16 局固定种子整局、真实浏览器操作。当前基准
+  **蓝 9 : 红 7、平均 9.0 分钟、场均 29 次击杀**（2026-11-16，含天命卷）；同样的托管打法 新兵 7/8 胜、名将 4/8 胜。
+  英雄之间同职业互为零和，改一个数会让别的胜率大幅摆动——别对着单次结果微调。
+- 特效在 `arena/vfx.ts`（全部实例化 / 点云批量绘制）。**判断流畅度必须用真实 GPU**：默认无头 Chromium 是 SwiftShader 软渲染（约 8 fps），
+  请加 `--use-angle=metal --enable-gpu`。2026-11-15 在 M3 上实测：日常 60 fps 零长帧，十人同时放 30 个技能 60 fps。
+  修好的四个卡顿及原因见 `Plan/game3-arena.md`「手感与流畅度」：**模拟按真实帧时长推进（不要改回固定 60 Hz 步进，会顿挫）**、
+  镜头锁定英雄、开局预热音频引擎与全部着色器、自适应分辨率。手机未实测。
+- **天命卷（2026-11-16）**：开局与每次升级三选一——技能精进（三阶觉醒改形态）、自动出手的武学（八门，最多三门）、心法。
+  敌我 AI 同样抽卡。卡池与觉醒在 `arena/growth.ts`（纯函数），武学结算在 `sim.ts` 的 `runAutos`。改动后跑 `v3-arena.mjs` 的「天命卷」一节。
+- **自动锁定**：技能轻点自动瞄准敌将（含提前量），按住 / 拖动才手动瞄准；普攻键敌将优先、不追进无兵线敌塔。见 `sim.ts` 的 `bestTarget` / `autoAim`。
+- 设计、平衡口径与已知限制见 `Plan/game3-arena.md`。
+
 ## v3 战斗角色更新（2026-10-07）
 - `animatedHumans.ts` 加载 CC0 Quaternius 骨骼角色与动作，`humanEquipment.ts` 提供原创中式甲胄、兵器与统帅披风。`warriors3d.ts` 保留下载失败时的程序化角色。素材来源、授权声明与打包脚本见 `public/arts/v3-models/ASSETS.md`；原始下载不提交。
 - 战斗默认近身第三人称镜头，V 切回俯瞰；鼠标左键挥刀、右键招架，J/K 与触屏按钮仍可使用。仍是十名友军对十二名敌军，不是 v2 首领战。
@@ -145,6 +167,12 @@ npx tsc --noEmit && npm run build
 node .claude/skills/verify/smoke.mjs           # 三个游戏各开一局，断言控制台零报错
 node .claude/skills/verify/v2-learn.mjs        # v2 边玩边学：题库自检 + 开场答题流程
 node .claude/skills/v3-balance/balance.mjs 45  # v3 数值改动必跑：随机乱选 45 局看胜率
+node .claude/skills/verify/v3-arena.mjs        # v3 逐鹿对战：规则断言 + 固定种子整局 + 真实界面
+```
+⚠️ **v3 的 3D 世界与逐鹿在 CPU 渲染下会超时**（2026-11-16 实测：3D 世界首帧在 SwiftShader 上要 77 秒以上，
+smoke 的 30 秒超时必失败；同一份代码在真实 GPU 上 5 秒就绪、全部通过）。在 Mac 上请加 GPU 预载再跑：
+```bash
+node --import ./.claude/skills/verify/gpu.mjs .claude/skills/verify/smoke.mjs   # 任何验收脚本都可这样跑
 ```
 这两个脚本是**提交进仓库的常备工具**，不依赖任何 AI 工具，`node` 直接跑就行。
 Playwright **故意不写进 `package.json`**——它是本地验收工具，进了依赖会让 CI 的 `npm ci` 挂掉。

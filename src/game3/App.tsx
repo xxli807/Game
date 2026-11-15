@@ -6,6 +6,8 @@ import { artForEvent } from './art'
 import { PlayGuide, RealmMap } from './interface'
 import DynastyWorld from './action/World'
 import { GameMode, GameModes } from './GameModes'
+import Arena from './arena/Arena'
+import { loadRecord, saveRecord } from './arena/record'
 import { FoundingGoal, HistoricalContext } from './ChronicleGuide'
 import { payCouncilCost } from './action/diplomacy'
 
@@ -138,7 +140,16 @@ export default function App() {
   const [run, setRun] = useState<Run | null>(null)
   const [gameMode, setGameMode] = useState<GameMode>('chronicle')
   const persist = (next: DynastyMeta) => { setMeta(next); saveMeta(next) }
-  const startRun = (mode: GameMode) => { setGameMode(mode); persist(recordRun(meta)); setRun(createRun(monarch)) }
+  const [arena, setArena] = useState(false)
+  // 逐鹿对战不走王朝 Run：它只借用所选君王与解锁进度，战绩另存。
+  const startRun = (mode: GameMode) => { if (mode === 'arena') { setArena(true); return } setGameMode(mode); persist(recordRun(meta)); setRun(createRun(monarch)) }
+  const finishArena = (result: { won: boolean; kills: number; bestStreak: number }) => {
+    const record = loadRecord()
+    saveRecord({ games: record.games + 1, wins: record.wins + (result.won ? 1 : 0), kills: record.kills + result.kills, bestStreak: Math.max(record.bestStreak, result.bestStreak) })
+    const name = result.won ? nextLocked(meta) : undefined
+    if (name) persist({ ...meta, unlocked: [...meta.unlocked, name] })
+    return name
+  }
   useEffect(() => {
     if (!run || run.status !== 'running' || run.event.id.startsWith('challenge-')) return
     const boundary = [4, 8, 12, 16, 20].indexOf(run.eventCount)
@@ -253,6 +264,7 @@ export default function App() {
     if (doomed.status !== 'running') return doomed
     return doomed
   })
+  if (arena) return <Arena hero={monarch.name} onFinish={finishArena} onExit={() => setArena(false)} />
   if (!run) {
     const locked = nextLocked(meta)
     return <main className="dynasty-app lobby-screen">

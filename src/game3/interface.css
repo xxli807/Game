@@ -21,7 +21,7 @@ body { background: #e9dcc0; }
 .monarch-emblem { width: 35px; height: 35px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: 1.25rem; }
 .monarch-pick.locked { color: #7c6952; background: #dfd4bc; }
 .monarch-card { width: min(980px, 100%); margin: 12px 0 20px; border-width: 1px; border-left-width: 5px; }
-.game-modes { width: min(980px, 100%); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; text-align: left; }
+.game-modes { width: min(980px, 100%); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; text-align: left; }
 .game-mode { display: flex; flex-direction: column; padding: 24px; border: 1px solid #b69c73; background: #f3e8d0; }
 .game-mode h2 { margin: 0 0 12px; font-size: 1.35rem; }
 .game-mode > p:not(.eyebrow) { color: #685037; line-height: 1.8; margin-bottom: 20px; }
@@ -30,7 +30,11 @@ body { background: #e9dcc0; }
 .start-playing-btn { border: 0; border-radius: 2px; padding: 15px 24px; color: #fff5dd; background: #344b42; box-shadow: 0 4px 0 #20332b; font-weight: 700; letter-spacing: .04em; }
 .start-playing-btn:hover { transform: translateY(-1px); background: #436354; }
 .start-playing-btn span { margin-left: 18px; }
-@media (max-width: 600px) { .game-modes { grid-template-columns: 1fr; } .game-mode { padding: 20px; } }
+.game-mode-arena { background: #ead9cf; border-color: #9a6a5a; }
+.arena-start-btn { border: 0; border-radius: 2px; padding: 15px 24px; color: #fff5dd; background: #7d3a2f; box-shadow: 0 4px 0 #57261f; font-weight: 700; letter-spacing: .04em; }
+.arena-start-btn:hover { transform: translateY(-1px); background: #96483a; }
+.arena-start-btn span { margin-left: 18px; }
+@media (max-width: 860px) { .game-modes { grid-template-columns: 1fr; } .game-mode { padding: 20px; } }
 .fine-print, .starting-readout { color: #705940; }
 .state-pips { display: flex; gap: 4px; margin-top: 7px; }
 .state-pips i { display: block; width: 18px; height: 4px; background: #d3c4a8; }
