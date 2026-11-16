@@ -118,8 +118,8 @@ npm run dev:v3    # 调试 v3
 - **2026-11-01 发布验收补记**：清除失败活动的配偶 / 人才 / 军制奖励，保留原事件代价。整局模拟各 10 局：p=1 为 7 胜、p=0.9 为 6 胜、p=0.8 为 1 胜；30 局均抵达结局且零浏览器错误。小样本、非固定随机种子，p=0.8 仍偏难；不是实际玩家成功率。
 
 ## v3 逐鹿：三路推塔对战（2026-11-15）
-- 大厅第三个入口「逐鹿开战」（`GameModes.tsx` 的 `arena`）。单机 5v5：玩家操控一位君王，四名 AI 友军对五名 AI 敌将，
-  三路兵线、防御塔、野怪，击毁敌方大鼎获胜，约十分钟一局。**不是联机**——站点是静态托管，没有服务器。
+- 大厅第三个入口「逐鹿开战」（`GameModes.tsx` 的 `arena`）。5v5：玩家操控一位君王，四名 AI 友军对五名 AI 敌将，
+  三路兵线、防御塔、野怪，击毁敌方大鼎获胜，约十分钟一局。可单人，也可和一位好友联机（见下面「好友联机」）。
 - 全部代码在 `src/game3/arena/`，不 import 王朝流程，只借用 `action/` 的骨骼角色。`App.tsx` 只多了 `arena` 状态、
   `finishArena` 和一行提前返回。逐鹿里十二位君王全部可选；胜利会解锁下一位君王，战绩另存 `dingge:v3:arena`。
 - **`arena/sim.ts` 是纯逻辑**（无 DOM、无 three.js、固定种子即确定性），整局规则、塔、兵线、技能与英雄 AI 都在里面；
@@ -137,6 +137,12 @@ npm run dev:v3    # 调试 v3
 - **天命卷（2026-11-16）**：开局与每次升级三选一——技能精进（三阶觉醒改形态）、自动出手的武学（八门，最多三门）、心法。
   敌我 AI 同样抽卡。卡池与觉醒在 `arena/growth.ts`（纯函数），武学结算在 `sim.ts` 的 `runAutos`。改动后跑 `v3-arena.mjs` 的「天命卷」一节。
 - **自动锁定**：技能轻点自动瞄准敌将（含提前量），按住 / 拖动才手动瞄准；普攻键敌将优先、不追进无兵线敌塔。见 `sim.ts` 的 `bestTarget` / `autoAim`。
+- **好友联机（2026-11-16）**：房间号开房 / 加入，「同队合作」两人同在蓝方，「对战」房主蓝方、好友红方，其余位置由 AI 补齐。
+  `arena/net.ts` 用 PeerJS 公共服务牵线、WebRTC 直连（依赖已进 `package.json`，开房时才加载）；**房主权威**：
+  房主跑唯一的 `ArenaSim`，20 Hz 发快照，好友端 `arena/sync.ts` 写进同种子的镜像对局再插值，好友只上传输入与指令。
+  不做双端同步模拟（各设备浮点函数可能不同）。好友断线由 AI 接管其英雄。只有两人、无 TURN 中继、未用两台真实设备试过。
+  改 `net.ts` / `sync.ts` / `sim.ts` 的座位与事件 / `game.ts` 的联机分支后跑 `node --import ./.claude/skills/verify/gpu.mjs .claude/skills/verify/v3-arena-online.mjs`
+  （`?net=local` 走同一浏览器的 BroadcastChannel，不碰外部服务）。
 - 设计、平衡口径与已知限制见 `Plan/game3-arena.md`。
 
 ## v3 战斗角色更新（2026-10-07）
@@ -168,6 +174,7 @@ node .claude/skills/verify/smoke.mjs           # 三个游戏各开一局，断�
 node .claude/skills/verify/v2-learn.mjs        # v2 边玩边学：题库自检 + 开场答题流程
 node .claude/skills/v3-balance/balance.mjs 45  # v3 数值改动必跑：随机乱选 45 局看胜率
 node .claude/skills/verify/v3-arena.mjs        # v3 逐鹿对战：规则断言 + 固定种子整局 + 真实界面
+node .claude/skills/verify/v3-arena-online.mjs # v3 逐鹿联机：两个标签页，同队 / 对战 / 断线
 ```
 ⚠️ **v3 的 3D 世界与逐鹿在 CPU 渲染下会超时**（2026-11-16 实测：3D 世界首帧在 SwiftShader 上要 77 秒以上，
 smoke 的 30 秒超时必失败；同一份代码在真实 GPU 上 5 秒就绪、全部通过）。在 Mac 上请加 GPU 预载再跑：

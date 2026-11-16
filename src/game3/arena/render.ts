@@ -477,7 +477,7 @@ export class ArenaRenderer {
         }
         if (h.recallT > 0) for (let i = 0; i < 3; i++) fx.glow(x, 0.6 + ((time * 2 + i / 3) % 1) * 5, z, 2.4, '#9fd6ff', 0.5)
         const status = h.stun > 0 ? '晕眩' : h.recallT > 0 ? '回城' : h.slowT > 0 ? '减速' : ''
-        this.bar(`h${h.id}`, at(h, 2.75 * HERO_SCALE), `hero ${h.team === 0 ? 'ally' : 'foe'}${h === me ? ' me' : ''}`, h.hp / h.maxHp, h.shield / h.maxHp, `${h.level} ${h.def.name}`, status)
+        this.bar(`h${h.id}`, at(h, 2.75 * HERO_SCALE), `hero ${h.team === me.team ? 'ally' : 'foe'}${h === me ? ' me' : ''}`, h.hp / h.maxHp, h.shield / h.maxHp, `${h.level} ${h.def.name}`, status)
       }
     }
     // Structures and neutral beasts.
@@ -491,7 +491,7 @@ export class ArenaRenderer {
         if (!u.alive && !s.dead) { s.dead = true; s.body.visible = false; s.glow!.visible = false; s.rubble.visible = true; fx.burst(u.x / UNIT, 3, u.y / UNIT, '#d8c9a8', 60, 12, 10, 1); fx.ring(u.x / UNIT, u.y / UNIT, '#f0d9a8', 1, 9, 0.9); fx.pillar(u.x / UNIT, u.y / UNIT, '#f0d9a8', 2.4, 12, 0.8) }
         if (u.alive) {
           s.glow!.scale.setScalar(1 + Math.sin(time * 4 + u.id) * 0.12)
-          if (near(u) && (u.hp < u.maxHp || u.kind === 'base')) this.bar(`s${u.id}`, at(u, u.kind === 'base' ? 7.4 : 8.3), `struct ${u.team === 0 ? 'ally' : 'foe'}`, u.hp / u.maxHp, 0, u.kind === 'base' ? '鼎' : '')
+          if (near(u) && (u.hp < u.maxHp || u.kind === 'base')) this.bar(`s${u.id}`, at(u, u.kind === 'base' ? 7.4 : 8.3), `struct ${u.team === me.team ? 'ally' : 'foe'}`, u.hp / u.maxHp, 0, u.kind === 'base' ? '鼎' : '')
         }
       } else if (u.kind === 'monster') {
         let mesh = this.beasts.get(u.id)
@@ -536,7 +536,7 @@ export class ArenaRenderer {
         const w = 1.5, k = Math.max(0, u.hp / u.maxHp), top = at(u, 1.75 * MINION_SCALE)
         this.m.compose(top, facing, this.v.set(w, 0.16, 1)); this.bars[0].setMatrixAt(bars, this.m)
         this.m.compose(top.addScaledVector(right, -w * (1 - k) / 2), facing, this.v.set(w * k, 0.11, 1)); this.bars[1].setMatrixAt(bars, this.m)
-        this.bars[1].setColorAt(bars, this.color.set(u.team === 0 ? '#6fd08a' : '#e06a55'))
+        this.bars[1].setColorAt(bars, this.color.set(u.team === this.sim.player.team ? '#6fd08a' : '#e06a55'))
         bars++
       }
     }
@@ -575,11 +575,11 @@ export class ArenaRenderer {
     for (const z of zones) {
       live.add(z.id)
       const seen = this.zonesSeen.get(z.id)
-      if (!seen) this.zonesSeen.set(z.id, { x: z.x, y: z.y, r: z.r, foe: z.team !== 0, armed: z.wait > 0 })
+      if (!seen) this.zonesSeen.set(z.id, { x: z.x, y: z.y, r: z.r, foe: z.team !== this.sim.player.team, armed: z.wait > 0 })
       else if (seen.armed && z.wait <= 0) { seen.armed = false; this.explode(seen) }
       if (z.wait <= 0 && z.left > 0 && Math.random() < dt * 30) {
         const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.r / UNIT
-        this.vfx.burst(z.x / UNIT + Math.cos(a) * r, 0.2, z.y / UNIT + Math.sin(a) * r, z.team !== 0 ? '#ff7a5c' : '#9fdcff', 1, 0.6, 6, 0.7, -1)
+        this.vfx.burst(z.x / UNIT + Math.cos(a) * r, 0.2, z.y / UNIT + Math.sin(a) * r, z.team !== this.sim.player.team ? '#ff7a5c' : '#9fdcff', 1, 0.6, 6, 0.7, -1)
       }
     }
     for (const [id, seen] of this.zonesSeen) if (!live.has(id)) { if (seen.armed) this.explode(seen); this.zonesSeen.delete(id) }
@@ -588,7 +588,7 @@ export class ArenaRenderer {
       disc.visible = ring.visible = Boolean(z)
       if (!z) return
       // Friendly areas are always cool blue and hostile ones red, whatever the caster's own colour.
-      const r = z.r / UNIT, foe = z.team !== 0, color = foe ? '#ff5a45' : '#8fd0ff'
+      const r = z.r / UNIT, foe = z.team !== this.sim.player.team, color = foe ? '#ff5a45' : '#8fd0ff'
       const fill = z.wait > 0 ? 1 - z.wait / z.delay : 1
       disc.position.copy(at(z, 0.09)); ring.position.copy(at(z, 0.1)); ring.scale.setScalar(r); disc.scale.setScalar(r * Math.max(0.05, fill))
       ;(disc.material as T.MeshBasicMaterial).color.set(color); (ring.material as T.MeshBasicMaterial).color.set(color)

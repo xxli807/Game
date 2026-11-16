@@ -24,6 +24,7 @@ node .claude/skills/verify/v3-melee.mjs            # 手动连击、命中窗口
 node .claude/skills/verify/v3-battle-ui.mjs         # 桌面、手机横竖屏的战斗按钮与截图
 node .claude/skills/verify/v3-campaign.mjs 1,0.9,0.8 10 # 活动结果进入真实 App 后的整局结算
 node .claude/skills/verify/v3-arena.mjs            # v3 逐鹿对战：36 个技能、塔与大鼎规则、固定种子整局、真实界面
+node .claude/skills/verify/v3-arena-online.mjs     # v3 逐鹿联机：两个标签页开房 / 加入，同队与对战、断线处理
 # 3D 场景在 CPU 渲染下会超时：Mac 上用 node --import ./.claude/skills/verify/gpu.mjs <脚本> 改走真实 GPU
 pkill -f "http.server 8080"
 ```

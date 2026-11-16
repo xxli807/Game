@@ -222,3 +222,23 @@
 }
 @media (max-width: 620px) and (orientation: portrait) { .arena-offer { width: 94vw; bottom: 316px; } .arena-kit-owned { bottom: 300px; } }
 @media (prefers-reduced-motion: reduce) { .arena-offer { animation: none; } .arena .arena-card.awake { animation: none; } }
+
+/* 与好友同玩 */
+.arena-friends { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.arena-friends h2 { margin: 0 0 6px; font-size: 15px; letter-spacing: .1em; color: var(--gold); }
+.arena-friends > p { margin: 4px 0; font-size: 12px; line-height: 1.7; color: #d2d0b9; }
+.arena-room-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.arena-room-actions button { display: flex; flex-direction: column; gap: 3px; padding: 10px; min-height: 58px; text-align: left; }
+.arena-room-actions b { font-size: 14px; } .arena-room-actions small { font-size: 11px; color: #c2c0a8; }
+.arena-join { display: flex; gap: 8px; }
+.arena-join input { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; font: inherit; font-size: 20px; letter-spacing: .4em; text-transform: uppercase; color: var(--paper); background: #0f1d17; border: 1px solid var(--line); border-radius: 4px; }
+.arena-join input:focus-visible { outline: 3px solid #f1d79c; outline-offset: 2px; }
+.arena-join button { min-width: 84px; min-height: 44px; }
+.arena-room { text-align: center; padding: 10px; background: #10201a99; }
+.arena-room p { margin: 6px 0; font-size: 13px; color: #d8d3b8; }
+.arena-code { display: block; margin: 6px 0; font-size: 44px; letter-spacing: .3em; color: #ffe7ae; font-variant-numeric: tabular-nums; user-select: all; -webkit-user-select: all; }
+.arena-room-error { color: #ffb4a4 !important; }
+.arena-room-note { font-size: 11px !important; color: #a9ab95 !important; line-height: 1.6; }
+.arena-online { padding: 4px 8px; font-size: 11px; background: #10201acc; border: 1px solid var(--line); text-shadow: none; }
+.arena-online.blue { border-color: #4f9ae0; } .arena-online.red { border-color: #e0604f; }
+@media (max-width: 620px) { .arena-room-actions { grid-template-columns: 1fr; } .arena-code { font-size: 36px; } .arena-online { display: none; } }

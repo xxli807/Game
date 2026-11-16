@@ -1,6 +1,8 @@
 import { BASE, FOUNTAIN, LANES, LANE_IDS, MAP, MAX_ITEMS, ULT_LEVEL, itemById, type ItemDef, type Vec } from './data'
 import { ArenaRenderer, type AimPreview } from './render'
-import { ArenaSim, type ArenaEvent, type ArenaOptions } from './sim'
+import { ArenaSim, type ArenaEvent, type ArenaOptions, type Hero } from './sim'
+import type { Link, Msg } from './net'
+import { apply, encode, interpolate, type Snapshot } from './sync'
 import { ArenaSound } from './sound'
 import { AUTOS, PERKS, describe } from './growth'
 
@@ -10,7 +12,9 @@ import { AUTOS, PERKS, describe } from './growth'
 
 export type Tone = 'good' | 'bad' | 'plain'
 export type ArenaHud = {
-  status: 'loading' | 'playing' | 'paused' | 'ended'
+  status: 'loading' | 'playing' | 'paused' | 'ended' | 'lost'
+  /** Online role, and the side this player is on (0 blue, 1 red). */
+  online: 'host' | 'guest' | null; team: number; friend: { name: string; alive: boolean; left: boolean } | null
   time: number; kills: [number, number]; towers: [number, number]; winner: number | null; auto: boolean; boss: [number, number]
   me: {
     name: string; level: number; xp: number; hp: number; maxHp: number; shield: number; gold: number; k: number; d: number; a: number
@@ -29,6 +33,8 @@ export type ArenaHud = {
 // The sim advances by the real frame time, so the world moves the same amount every frame.
 // (A fixed 60 Hz step drifts against the display and made the hero stall or jump on 28% of frames.)
 const MAX_STEP = 1 / 30
+const SNAP_EVERY = 0.05 // host → guest snapshots, 20 a second
+export type NetRole = { role: 'host' | 'guest'; link: Link }
 
 export class ArenaGame {
   sim: ArenaSim
@@ -56,9 +62,25 @@ export class ArenaGame {
   private mapBase?: HTMLCanvasElement
   private cleanup: (() => void)[] = []
   private destroyed = false
+  private outbox: ArenaEvent[] = []
+  private snapTimer = 0
+  private inbox: Snapshot[] = []
+  private friendLeft = false
+  private gotSnapshot = false
+  private finalSent = false
 
-  constructor(canvas: HTMLCanvasElement, options: ArenaOptions, private onHud: (hud: ArenaHud) => void) {
+  constructor(canvas: HTMLCanvasElement, options: ArenaOptions, private onHud: (hud: ArenaHud) => void, private net?: NetRole) {
     this.sim = new ArenaSim(options)
+    // The guest's copy is a mirror: same options and seed give the same map, ids and heroes; snapshots move it.
+    if (net?.role === 'guest' && this.sim.guest) this.sim.player = this.sim.guest
+    if (net) {
+      this.cleanup.push(net.link.onMessage(message => this.receive(message)))
+      this.cleanup.push(net.link.onClose(() => {
+        this.friendLeft = true
+        if (net.role === 'host') { this.sim.releaseGuest(); this.say('好友已断开 · 其英雄由 AI 接管', 'bad', 4) }
+        this.emit()
+      }))
+    }
     this.sound.warm()
     this.renderer = new ArenaRenderer(canvas, this.sim)
     const down = (e: KeyboardEvent) => {
@@ -103,7 +125,30 @@ export class ArenaGame {
   }
 
   // ---------- commands from the HUD ----------
-  private get active() { return !this.destroyed && !this.paused && this.renderer.loaded && this.sim.winner === null }
+  private get active() { return !this.destroyed && !this.paused && this.renderer.loaded && this.sim.winner === null && !(this.guestSide && this.friendLeft) }
+  private get guestSide() { return this.net?.role === 'guest' }
+  private get friendHero(): Hero | undefined { return this.net ? (this.guestSide ? this.sim.heroes.find(h => h.isPlayer && h !== this.sim.player) : this.sim.guest) : undefined }
+  /** Online: the guest's commands go to the host's match; offline (and on the host) they act directly. */
+  private order(message: Msg, local: () => boolean | void) {
+    if (this.guestSide) { this.net!.link.send(message); return true }
+    return local()
+  }
+  // Host: apply a command from the guest to the guest's hero. Everything is validated; nothing is trusted blindly.
+  private receive(message: Msg) {
+    if (this.guestSide) { if (message.t === 'snap') this.inbox.push(message.s as Snapshot); return }
+    const h = this.sim.guest, num = (v: unknown, lo: number, hi: number) => typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : 0
+    const vec = (v: unknown) => v && typeof v === 'object' ? { x: num((v as Vec).x, -1e4, 1e4), y: num((v as Vec).y, -1e4, 1e4) } : undefined
+    if (!h || this.sim.winner !== null) return
+    const seat = this.sim.seat(h)
+    if (message.t === 'in') Object.assign(seat.input, { mx: num(message.mx, -1, 1), my: num(message.my, -1, 1), attack: Boolean(message.attack), prefer: ['auto', 'minion', 'tower'].includes(message.prefer as string) ? message.prefer : 'auto' })
+    else if (message.t === 'cast') this.sim.cast(h, num(message.slot, 0, 2) | 0, vec(message.aim))
+    else if (message.t === 'pick') this.sim.pick(num(message.i, 0, 2) | 0, h)
+    else if (message.t === 'flash') this.sim.flash(h, vec(message.dir))
+    else if (message.t === 'recall') this.sim.recall(h)
+    else if (message.t === 'heal') this.sim.useHeal(h)
+    else if (message.t === 'buy') { const item = this.sim.nextItem(h); if (item) this.sim.buy(h, item.id) }
+    else if (message.t === 'auto') seat.auto = Boolean(message.on)
+  }
   private resetInput() {
     this.keys.clear(); this.holdAttack = this.mouseAttack = false; this.aiming = null; this.stick = { x: 0, y: 0 }
     Object.assign(this.sim.input, { mx: 0, my: 0, attack: false, prefer: 'auto' })
@@ -127,7 +172,7 @@ export class ArenaGame {
     this.aiming = null
     // A tap leaves aiming to the sim, which re-picks the target at the moment of the cast.
     const aim = !manual ? undefined : skill.aim === 'dir' ? preview?.dir : skill.aim === 'point' ? preview?.point : undefined
-    if (this.sim.cast(me, slot, aim)) this.sound.play(slot === 2 ? 'ult' : 'cast')
+    if (this.order({ t: 'cast', slot, aim }, () => this.sim.cast(me, slot, aim))) this.sound.play(slot === 2 ? 'ult' : 'cast')
   }
   /** 闪现 toward the stick / keys, else toward the mouse, else straight ahead. */
   flash() {
@@ -135,24 +180,33 @@ export class ArenaGame {
     const { mx, my } = this.movement(), me = this.sim.player
     let dir: Vec | undefined = Math.hypot(mx, my) > 0.12 ? { x: mx, y: my } : undefined
     if (!dir && this.mouse) { const world = this.renderer.ground(this.mouse.x, this.mouse.y); dir = { x: world.x - me.x, y: world.y - me.y } }
-    if (this.sim.flash(me, dir)) this.sound.play('whoosh', 1.3)
+    if (this.order({ t: 'flash', dir }, () => this.sim.flash(me, dir))) this.sound.play('whoosh', 1.3)
   }
   /** Slow the world for a beat: hit-stop on big moments. */
-  private slow(seconds: number, scale: number) { if (seconds > this.slowLeft) { this.slowLeft = seconds; this.slowScale = scale } }
+  private slow(seconds: number, scale: number) { if (this.net) return; if (seconds > this.slowLeft) { this.slowLeft = seconds; this.slowScale = scale } } // online, slow motion would slow the shared world
   /** Take one of the offered level-up cards. */
-  pick(index: number) { if (this.active && this.sim.pick(index)) { this.sound.play('level'); this.emit() } }
-  recall() { if (this.active) this.sim.recall() }
-  heal() { if (this.active && this.sim.useHeal()) this.sound.play('level') }
+  pick(index: number) {
+    if (!this.active || !this.sim.player.offer?.[index]) return
+    if (this.guestSide) this.sim.player.offer = null // hide the cards now; the host's snapshot confirms
+    if (this.order({ t: 'pick', i: index }, () => this.sim.pick(index))) { this.sound.play('level'); this.emit() }
+  }
+  recall() { if (this.active) this.order({ t: 'recall' }, () => this.sim.recall()) }
+  heal() { if (this.active && this.order({ t: 'heal' }, () => this.sim.useHeal())) this.sound.play('level') }
   buyNext() {
     if (!this.active) return
     const item = this.sim.nextItem(this.sim.player)
-    if (item && this.sim.buy(this.sim.player, item.id)) { this.sound.play('buy'); this.emit() }
+    if (item && this.sim.player.gold >= item.cost && this.order({ t: 'buy' }, () => this.sim.buy(this.sim.player, item.id))) { this.sound.play('buy'); this.emit() }
   }
   togglePause() {
     if (this.destroyed || this.sim.winner !== null) return
     this.paused = !this.paused; this.resetInput(); this.emit()
   }
-  toggleAuto() { if (!this.active) return; this.resetInput(); this.sim.autopilot = !this.sim.autopilot; this.emit() }
+  toggleAuto() {
+    if (!this.active) return
+    this.resetInput(); this.sim.autopilot = !this.sim.autopilot
+    if (this.guestSide) this.net!.link.send({ t: 'auto', on: this.sim.autopilot })
+    this.emit()
+  }
   setMuted(muted: boolean) { this.sound.muted = muted }
 
   /** A key tapped (released within this time) or a skill button tapped without dragging auto-aims. */
@@ -182,6 +236,20 @@ export class ArenaGame {
     return { skill, dir, point }
   }
 
+  // ---------- events and snapshots (solo and host) ----------
+  private dispatch() {
+    const guest = this.net && !this.friendLeft ? this.sim.guest : undefined
+    for (const event of this.sim.events.splice(0)) {
+      const mine = this.net ? this.sim.localize(event, this.sim.player) : event
+      if (mine) this.handle(mine)
+      const theirs = guest && this.sim.localize(event, guest)
+      // Effects far off the friend's screen are not worth the bandwidth; results (kills, towers, the end) always go.
+      const far = theirs && 'x' in theirs && !['kill', 'tower', 'end', 'boss'].includes(theirs.type) && Math.hypot((theirs as { x: number }).x - guest!.x, (theirs as { y: number }).y - guest!.y) > 1700
+      if (theirs && !far) this.outbox.push(theirs)
+    }
+  }
+  private sendSnapshot() { const guest = this.sim.guest; if (guest) this.net!.link.send({ t: 'snap', s: encode(this.sim, guest, this.outbox.splice(0)) }) }
+
   // ---------- loop ----------
   private movement() {
     const k = this.keys
@@ -194,18 +262,30 @@ export class ArenaGame {
     if (this.destroyed) return
     const dt = this.previous ? Math.min(0.1, (now - this.previous) / 1000) : 0
     this.previous = now
-    const live = !this.paused && this.renderer.loaded && this.sim.winner === null
+    // Online the match never pauses: the menu only stops this player's own input.
+    const live = (!this.paused || Boolean(this.net)) && this.renderer.loaded && this.sim.winner === null
     let simDt = 0
     if (live) {
-      const k = this.keys
-      Object.assign(this.sim.input, this.movement())
-      this.sim.input.attack = this.holdAttack || this.mouseAttack || k.has('j') || k.has(' ')
-      const scale = this.slowLeft > 0 ? this.slowScale : 1
-      this.slowLeft = Math.max(0, this.slowLeft - dt)
-      simDt = dt * scale
-      for (let left = simDt; left > 1e-5; left -= MAX_STEP) this.sim.step(Math.min(left, MAX_STEP))
-      for (const event of this.sim.events.splice(0)) this.handle(event)
+      const k = this.keys, attack = this.active && (this.holdAttack || this.mouseAttack || k.has('j') || k.has(' '))
+      const move = this.active ? this.movement() : { mx: 0, my: 0 }
+      Object.assign(this.sim.input, move); this.sim.input.attack = attack
+      if (this.guestSide) {
+        // Guest: show the host's match. Apply every snapshot that arrived, then glide between them.
+        for (const snap of this.inbox.splice(0)) { this.gotSnapshot = true; for (const event of apply(this.sim, snap, now)) this.handle(event) }
+        interpolate(this.sim, now)
+        if ((this.snapTimer -= dt) <= 0) { this.snapTimer = SNAP_EVERY; if (!this.friendLeft) this.net!.link.send({ t: 'in', ...move, attack, prefer: this.sim.input.prefer }) }
+        simDt = this.gotSnapshot ? dt : 0
+      } else {
+        const scale = this.slowLeft > 0 ? this.slowScale : 1
+        this.slowLeft = Math.max(0, this.slowLeft - dt)
+        simDt = dt * scale
+        for (let left = simDt; left > 1e-5; left -= MAX_STEP) this.sim.step(Math.min(left, MAX_STEP))
+        this.dispatch()
+        if (this.net && !this.friendLeft && (this.snapTimer -= dt) <= 0) { this.snapTimer = SNAP_EVERY; this.sendSnapshot() }
+      }
     }
+    // However the match ended, the host drains the last events and sends one final snapshot with the result.
+    if (this.net?.role === 'host' && this.sim.winner !== null && !this.finalSent) { this.dispatch(); if (!this.friendLeft) this.sendSnapshot(); this.finalSent = true }
     this.announceLeft -= this.paused ? 0 : dt
     if (this.announceLeft <= 0) this.announce = null
     if ((this.cutinLeft -= this.paused ? 0 : dt) <= 0) this.cutin = null
@@ -218,7 +298,7 @@ export class ArenaGame {
     this.renderer.handle(event)
     const me = this.sim.player
     if (event.type === 'kill') {
-      const ours = event.killerTeam === 0
+      const ours = event.killerTeam === me.team
       this.feed = [{ id: this.noteId++, text: event.killer ? `${event.killer} 击败 ${event.victim}` : `${event.victim} 阵亡`, tone: (ours ? 'good' : 'bad') as Tone }, ...this.feed].slice(0, 4)
       if (event.role === 'killer') {
         this.bestStreak = Math.max(this.bestStreak, event.streak)
@@ -229,9 +309,10 @@ export class ArenaGame {
       else if (event.first) this.say(`${event.killer} 拿下首杀`, ours ? 'good' : 'bad', 2)
     } else if (event.type === 'tower') {
       const lane = { top: '上路', mid: '中路', bot: '下路' }[event.lane]
-      this.say(event.team === 1 ? `攻破敌方${lane}防御塔！` : `我方${lane}防御塔失守`, event.team === 1 ? 'good' : 'bad', 3.2); this.sound.play('tower')
+      const theirs = event.team !== me.team
+      this.say(theirs ? `攻破敌方${lane}防御塔！` : `我方${lane}防御塔失守`, theirs ? 'good' : 'bad', 3.2); this.sound.play('tower')
     } else if (event.type === 'bossSpawn') { this.say('镇河铁牛现身下游河道', 'plain', 3.2); this.sound.play('horn') }
-    else if (event.type === 'boss') { this.say(event.team === 0 ? '我方降服铁牛 · 全军增益' : '敌方降服了铁牛', event.team === 0 ? 'good' : 'bad', 3.2); this.sound.play('horn') }
+    else if (event.type === 'boss') { const ours = event.team === me.team; this.say(ours ? '我方降服铁牛 · 全军增益' : '敌方降服了铁牛', ours ? 'good' : 'bad', 3.2); this.sound.play('horn') }
     else if (event.type === 'grow' && event.mine) {
       const card = event.card
       if (event.awake && card.kind === 'skill') { this.say(`「${me.def.skills[card.slot].name}」觉醒！`, 'good', 3); this.sound.play('ult', 0.8) }
@@ -249,13 +330,15 @@ export class ArenaGame {
     else if (event.type === 'dmg') { if (event.mine && event.heavy) this.slow(0.06, 0.15) }
     else if (event.type === 'gold') this.sound.play('coin', 0.6)
     else if (event.type === 'flash') { if (Math.hypot(event.x - me.x, event.y - me.y) < 800) this.sound.play('whoosh', 0.8) }
-    else if (event.type === 'end') { this.say(event.winner === 0 ? '敌鼎已破 · 胜利！' : '我方大鼎被毁', event.winner === 0 ? 'good' : 'bad', 6); this.sound.play(event.winner === 0 ? 'win' : 'lose', 1.5); this.emit() }
+    else if (event.type === 'end') { const won = event.winner === me.team; this.say(won ? '敌鼎已破 · 胜利！' : '我方大鼎被毁', won ? 'good' : 'bad', 6); this.sound.play(won ? 'win' : 'lose', 1.5); this.emit() }
   }
   private emit() {
     const sim = this.sim, me = sim.player, next = sim.nextItem(me)
     const towers = [0, 1].map(team => sim.units.filter(u => u.kind === 'tower' && u.team === team && u.alive).length) as [number, number]
     this.onHud({
-      status: sim.winner !== null ? 'ended' : !this.renderer.loaded ? 'loading' : this.paused ? 'paused' : 'playing',
+      status: sim.winner !== null ? 'ended' : this.guestSide && this.friendLeft ? 'lost' : !this.renderer.loaded || (this.guestSide && !this.gotSnapshot) ? 'loading' : this.paused ? 'paused' : 'playing',
+      online: this.net?.role ?? null, team: me.team,
+      friend: this.friendHero ? { name: this.friendHero.def.name, alive: this.friendHero.alive, left: this.friendLeft } : null,
       time: sim.time, kills: [sim.kills[0], sim.kills[1]], towers, winner: sim.winner, auto: sim.autopilot, boss: [sim.bossBuff[0], sim.bossBuff[1]],
       me: {
         name: me.def.name, level: me.level, xp: Math.min(1, me.xp / (100 + 62 * me.level)), hp: Math.max(0, Math.round(me.hp)), maxHp: Math.round(me.maxHp), shield: Math.round(me.shield), gold: Math.floor(me.gold),

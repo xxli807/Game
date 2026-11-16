@@ -34,12 +34,12 @@ export type Hero = Unit & {
 export type Shot = { heavy?: boolean; id: number; team: Team | 2; ownerId: number; x: number; y: number; dx: number; dy: number; speed: number; targetId: number; dmg: number; width: number; left: number; pierce: boolean; hit: number[]; stun: number; slow: number; kind: 'basic' | 'tower' | 'skill'; color: string }
 export type Zone = { id: number; team: Team; ownerId: number; x: number; y: number; r: number; delay: number; wait: number; left: number; tick: number; dmg: number; stun: number; slow: number; color: string }
 export type ArenaEvent =
-  | { type: 'dmg'; x: number; y: number; amount: number; mine: boolean; heavy: boolean }
-  | { type: 'gold'; x: number; y: number; amount: number }
+  | { type: 'dmg'; x: number; y: number; amount: number; mine: boolean; heavy: boolean; src: number; tgt: number }
+  | { type: 'gold'; x: number; y: number; amount: number; hero: number }
   | { type: 'flash'; x: number; y: number; tx: number; ty: number; color: string }
   | { type: 'down'; x: number; y: number; color: string }
-  | { type: 'heal'; x: number; y: number; amount: number }
-  | { type: 'kill'; killer: string | null; victim: string; killerTeam: Team | 2; first: boolean; multi: number; streak: number; role: 'killer' | 'victim' | 'assist' | null }
+  | { type: 'heal'; x: number; y: number; amount: number; hero: number }
+  | { type: 'kill'; killer: string | null; victim: string; killerTeam: Team | 2; first: boolean; multi: number; streak: number; role: 'killer' | 'victim' | 'assist' | null; killerId: number; victimId: number; helperIds: number[] }
   | { type: 'tower'; team: Team; lane: LaneId }
   | { type: 'cast'; id: number; slot: number; mine: boolean; x: number; y: number; color: string }
   | { type: 'cone'; x: number; y: number; dx: number; dy: number; radius: number; arc: number; color: string }
@@ -59,7 +59,12 @@ const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y)
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 const xpNeed = (level: number) => 100 + 62 * level
 
-export type ArenaOptions = { hero: string; seed?: number; difficulty?: number; allAi?: boolean }
+/** A second human (online): their hero, and the side they play on (0 = with the host, 1 = against). */
+export type GuestOptions = { hero: string; team: Team }
+export type ArenaOptions = { hero: string; seed?: number; difficulty?: number; allAi?: boolean; guest?: GuestOptions }
+export type Input = { mx: number; my: number; attack: boolean; prefer: 'auto' | 'minion' | 'tower' }
+/** Per-human controls: what they are pressing, who they are locked on, and whether AI is driving for them. */
+export type Seat = { input: Input; sticky: number; auto: boolean }
 
 export class ArenaSim {
   time = 0
@@ -72,15 +77,29 @@ export class ArenaSim {
   kills: [number, number] = [0, 0]
   bossBuff: [number, number] = [0, 0] // seconds left of 铁牛之力 per team
   player!: Hero
-  autopilot = false
-  input = { mx: 0, my: 0, attack: false, prefer: 'auto' as 'auto' | 'minion' | 'tower' }
+  guest?: Hero
+  seats = new Map<number, Seat>()
+  // The host player's seat under the old single-player names, so renderer, HUD and tests are unchanged.
+  get input() { return this.seat(this.player).input }
+  get stickyTarget() { return this.seat(this.player).sticky }
+  set stickyTarget(id: number) { this.seat(this.player).sticky = id }
+  get autopilot() { return this.seat(this.player).auto }
+  set autopilot(on: boolean) { this.seat(this.player).auto = on }
+  seat(h: Hero): Seat {
+    let seat = this.seats.get(h.id)
+    if (!seat) { seat = { input: { mx: 0, my: 0, attack: false, prefer: 'auto' }, sticky: 0, auto: false }; this.seats.set(h.id, seat) }
+    return seat
+  }
+  /** A hero a person is steering right now (not AI, not handed over to AI). */
+  human(h: Hero) { return h.isPlayer && !this.seat(h).auto }
+  /** The online friend left: AI takes their hero for the rest of the match. */
+  releaseGuest() { if (this.guest) this.seat(this.guest).auto = true }
   private id = 1
   private seed: number
   private wave = 0
   private nextWave = 8
   private firstBlood = false
   private heavy = false
-  stickyTarget = 0
   private baseHitAt: [number, number] = [-99, -99]
   private bossAt = 150
   private difficulty: (typeof DIFFICULTIES)[number]
@@ -93,7 +112,12 @@ export class ArenaSim {
     for (const team of [0, 1] as Team[]) this.units.push(this.unit({ team, kind: 'base', sub: 'base', ...BASE[team], r: 110, hp: 8200, atk: 380, armor: 60, range: 560, interval: 1 }))
     for (const t of TOWERS) this.units.push(this.unit({ team: t.team, kind: 'tower', sub: t.tier, ...t.at, r: 62, hp: t.tier === 'outer' ? 4800 : 5800, atk: 260, armor: 60, range: TOWER_RANGE, interval: 1, lane: t.lane }))
     for (const camp of CAMPS) this.units.push(this.monster(camp, 'camp'))
-    this.draft(heroByName(options.hero))
+    this.draft(heroByName(options.hero), options.guest)
+  }
+
+  /** Used by the online guest's mirror copy to add a unit first seen in a host snapshot. */
+  mirrorUnit(p: Partial<Unit> & { id: number; team: Team | 2; kind: Kind; sub: string; x: number; y: number; r: number; hp: number; maxHp: number; range: number }): Unit {
+    const u = this.unit({ ...p, atk: 0, interval: 1 }); u.id = p.id; this.units.push(u); return u
   }
 
   // ---------- setup ----------
@@ -109,19 +133,23 @@ export class ArenaSim {
     const boss = sub === 'boss'
     return this.unit({ team: 2, kind: 'monster', sub, ...at, r: boss ? 70 : 42, hp: boss ? 5600 : 1500, atk: boss ? 170 : 85, armor: boss ? 40 : 15, range: boss ? 170 : 120, interval: 1.2, speed: 250, ranged: false, home: { ...at } })
   }
-  private draft(pick: HeroDef) {
-    const pool = [...HEROES].filter(h => h !== pick)
+  private draft(pick: HeroDef, guest?: GuestOptions) {
+    const friend = guest ? heroByName(guest.hero) : undefined
+    const pool = [...HEROES].filter(h => h !== pick && h !== friend)
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(this.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]] }
     const take = (cls: string) => pool.splice(pool.findIndex(h => h.cls === cls), 1)[0]
     const shape = ['fighter', 'mage', 'marksman', 'tank', 'fighter']
     const lanes: { lane: LaneId; flex: boolean }[] = [{ lane: 'top', flex: false }, { lane: 'mid', flex: false }, { lane: 'bot', flex: false }, { lane: 'bot', flex: false }, { lane: 'mid', flex: true }]
     for (const team of [0, 1] as Team[]) {
-      let mine = team === 0 ? shape.lastIndexOf(pick.cls) : -1
+      // Each human takes the slot of their class (the guest avoids the host's slot when on the same side).
+      const mine = team === 0 ? shape.lastIndexOf(pick.cls) : -1
+      let theirs = friend && guest!.team === team ? shape.lastIndexOf(friend.cls) : -1
+      if (theirs >= 0 && theirs === mine) theirs = shape.findIndex((cls, i) => i !== mine && cls === friend!.cls) >= 0 ? shape.findIndex((cls, i) => i !== mine && cls === friend!.cls) : mine === 4 ? 0 : 4
       shape.forEach((cls, i) => {
-        const isPick = i === mine
-        if (isPick) mine = -2
-        const hero = this.makeHero(isPick ? pick : take(cls), team, lanes[i], isPick && !this.allAi)
-        if (isPick) this.player = hero
+        const def = i === mine ? pick : i === theirs ? friend! : take(cls)
+        const hero = this.makeHero(def, team, lanes[i], (i === mine || i === theirs) && !this.allAi)
+        if (i === mine) this.player = hero
+        if (i === theirs) this.guest = hero
       })
     }
   }
@@ -142,7 +170,7 @@ export class ArenaSim {
   }
   private refresh(h: Hero) {
     const c = CLASS_STATS[h.def.cls], grown = h.level - 1
-    const tune = h.team === 1 && !this.allAi ? this.difficulty.enemy : 1
+    const tune = h.team === 1 && !this.allAi && !h.isPlayer ? this.difficulty.enemy : 1
     let hp = c.hp * (1 + 0.085 * grown), atk = c.atk * (1 + 0.075 * grown), armor = c.armor + 2.5 * grown, speed = c.speed, aspd = 1, ls = 0, cdr = 0
     for (const id of h.items) { const it = itemById(id); hp += it.hp ?? 0; atk += it.atk ?? 0; armor += it.armor ?? 0; speed += it.speed ?? 0; aspd += it.aspd ?? 0; ls += it.lifesteal ?? 0; cdr += it.cdr ?? 0 }
     const perk = (id: PerkId) => h.perks?.[id] ?? 0
@@ -199,19 +227,20 @@ export class ArenaSim {
       t.damagedAt = this.time; t.recallT = 0
       if (hero) t.assists.set(hero.id, this.time)
     }
-    if (amount > 1 && (source === this.player || target === this.player)) this.events.push({ type: 'dmg', x: target.x, y: target.y, amount, mine: source === this.player, heavy: this.heavy })
+    const people = (u: Unit | null) => u?.kind === 'hero' && (u as Hero).isPlayer
+    if (amount > 1 && (people(source) || people(target))) this.events.push({ type: 'dmg', x: target.x, y: target.y, amount, mine: source === this.player, heavy: this.heavy, src: source?.id ?? 0, tgt: target.id })
     if (target.hp <= 0) this.kill(target, source)
     return amount
   }
   private heal(h: Unit, amount: number) {
     const before = h.hp
     h.hp = Math.min(h.maxHp, h.hp + amount)
-    if (h === this.player && h.hp - before > 8) this.events.push({ type: 'heal', x: h.x, y: h.y, amount: h.hp - before })
+    if (h.kind === 'hero' && (h as Hero).isPlayer && h.hp - before > 8) this.events.push({ type: 'heal', x: h.x, y: h.y, amount: h.hp - before, hero: h.id })
   }
   private pay(h: Hero, gold: number, xp: number, at?: Vec) {
     gold *= 1 + 0.25 * (h.perks.greed ?? 0)
     h.gold += gold; h.earned += gold; h.xp += xp
-    if (at && h === this.player && gold >= 1) this.events.push({ type: 'gold', x: at.x, y: at.y, amount: Math.round(gold) })
+    if (at && h.isPlayer && gold >= 1) this.events.push({ type: 'gold', x: at.x, y: at.y, amount: Math.round(gold), hero: h.id })
     while (h.level < MAX_LEVEL && h.xp >= xpNeed(h.level)) {
       h.xp -= xpNeed(h.level); h.level++; h.picks++
       this.refresh(h); this.heal(h, h.maxHp * 0.12)
@@ -260,7 +289,7 @@ export class ArenaSim {
       } else if (source && source.team !== 2) this.kills[source.team as Team]++
       for (const h of helpers) { h.a++; this.pay(h, 70, 50 + victim.level * 12) }
       const role = killer === this.player ? 'killer' : victim === this.player ? 'victim' : helpers.includes(this.player) ? 'assist' : null
-      this.events.push({ type: 'kill', killer: killer?.def.name ?? null, victim: victim.def.name, killerTeam: killer?.team ?? source?.team ?? 2, first: !this.firstBlood && Boolean(killer), multi: killer?.multi ?? 0, streak: killer?.streak ?? 0, role })
+      this.events.push({ type: 'kill', killer: killer?.def.name ?? null, victim: victim.def.name, killerTeam: killer?.team ?? source?.team ?? 2, first: !this.firstBlood && Boolean(killer), multi: killer?.multi ?? 0, streak: killer?.streak ?? 0, role, killerId: killer?.id ?? 0, victimId: victim.id, helperIds: helpers.map(x => x.id) })
       if (killer) this.firstBlood = true
     }
   }
@@ -477,10 +506,10 @@ export class ArenaSim {
   /** What the attack button would lock onto right now, without committing to it. */
   lockCandidate(h: Hero = this.player): Unit | undefined { return this.chooseTarget(h, false) }
   private chooseTarget(h: Hero, commit: boolean): Unit | undefined {
-    const reach = h.range + 320, heroReach = h.range + 300, prefer = this.input.prefer
+    const seat = this.seat(h), reach = h.range + 320, heroReach = h.range + 300, prefer = seat.input.prefer
     const ok = (u: Unit) => this.hostile(h, u) && (u.kind !== 'base' || this.baseOpen(u.team as Team))
     const structure = (u: Unit) => u.kind === 'tower' || u.kind === 'base'
-    const sticky = this.byId(this.stickyTarget)
+    const sticky = this.byId(seat.sticky)
     let pick: Unit | undefined
     if (sticky && ok(sticky) && dist(sticky, h) < reach + sticky.r && prefer === 'auto') {
       // Keep the lock, except that a hero stepping into reach outranks a minion.
@@ -491,18 +520,18 @@ export class ArenaSim {
       pick ??= this.bestTarget(h, heroReach, true)
       pick ??= this.nearest(h, reach, u => ok(u) && (!structure(u) || this.covered(u)))
     }
-    if (commit) this.stickyTarget = pick?.id ?? 0
+    if (commit) seat.sticky = pick?.id ?? 0
     return pick
   }
   private playerTarget(h: Hero) { return this.chooseTarget(h, true) }
   private control(h: Hero, dt: number) {
-    const { mx, my, attack } = this.input, len = Math.hypot(mx, my)
+    const seat = this.seat(h), { mx, my, attack } = seat.input, len = Math.hypot(mx, my)
     if (len > 0.12) {
-      h.recallT = 0; h.windup = 0; this.stickyTarget = 0
+      h.recallT = 0; h.windup = 0; seat.sticky = 0
       this.move(h, mx, my, dt, Math.min(1, len))
       return
     }
-    if (!attack && !this.stickyTarget) {
+    if (!attack && !seat.sticky) {
       // Standing still, the hero fights whatever is already in reach — but never picks a fight
       // with a hero under an enemy tower, and never opens on a structure that has no wave on it.
       if (h.recallT > 0) return
@@ -728,6 +757,18 @@ export class ArenaSim {
     return Math.min(best, path.length - 1)
   }
 
+  /** An event as one particular player should experience it ('mine', kill role), or null if it is not theirs to see. */
+  localize(e: ArenaEvent, viewer: Hero): ArenaEvent | null {
+    const me = viewer.id
+    switch (e.type) {
+      case 'dmg': return e.src === me || e.tgt === me ? { ...e, mine: e.src === me } : null
+      case 'heal': case 'gold': return e.hero === me ? e : null
+      case 'levelup': case 'grow': case 'cast': return { ...e, mine: e.id === me }
+      case 'kill': return { ...e, role: e.killerId === me ? 'killer' : e.victimId === me ? 'victim' : e.helperIds.includes(me) ? 'assist' : null }
+      default: return e
+    }
+  }
+
   // ---------- per-kind updates ----------
   private updateHero(h: Hero, dt: number) {
     const px = h.x, py = h.y
@@ -739,7 +780,7 @@ export class ArenaSim {
       h.vx = h.vy = 0; return
     }
     h.gold += 3 * dt; h.earned += 3 * dt; h.xp += 4 * dt
-    if (h.picks > 0) { if (h.isPlayer && !this.autopilot) h.offer ??= this.offerFor(h); else this.aiPick(h) }
+    if (h.picks > 0) { if (this.human(h)) h.offer ??= this.offerFor(h); else this.aiPick(h) }
     if (h.stun <= 0 && this.winner === null) this.runAutos(h, dt)
     if (h.level < MAX_LEVEL && h.xp >= xpNeed(h.level)) this.pay(h, 0, 0)
     h.moving = false
@@ -749,7 +790,7 @@ export class ArenaSim {
       if (h.dash.dmg > 0 || h.dash.stun > 0 || h.dash.slow > 0) for (const u of this.around(h, h.dash.width, u => this.hostile(h, u) && u.kind !== 'tower' && u.kind !== 'base' && !h.dash!.hit.includes(u.id))) { h.dash.hit.push(u.id); this.affect(h, u, h.dash.dmg, h.dash.stun, h.dash.slow) }
       if (h.dash.left <= 0) { h.dash = null; this.unstick(h) }
     } else if (h.stun <= 0) {
-      if (h.isPlayer && !this.autopilot) this.control(h, dt)
+      if (this.human(h)) this.control(h, dt)
       else this.drive(h, dt)
     }
     if (h.recallT > 0 && (h.recallT -= dt) <= 0) { h.x = FOUNTAIN[h.team].x; h.y = FOUNTAIN[h.team].y; h.recallT = 0 }
